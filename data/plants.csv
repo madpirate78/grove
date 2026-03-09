@@ -1,0 +1,52 @@
+botanical_name,common_name,category,height_mm,spread_mm,colour_code,flower_colour,foliage_colour,evergreen,notes
+Lavandula angustifolia,English Lavender,Shrub,600,600,#9C27B0,Purple,Grey-green,Yes,Aromatic; attracts bees
+Rosmarinus officinalis,Rosemary,Shrub,1200,900,#3F51B5,Blue,Dark green,Yes,Culinary herb; drought tolerant
+Salvia nemorosa,Woodland Sage,Perennial,500,450,#7B1FA2,Purple,Green,No,Long flowering; cut back after first flush
+Echinacea purpurea,Purple Coneflower,Perennial,900,450,#E91E63,Pink-purple,Green,No,Attracts butterflies; medicinal
+Hemerocallis fulva,Day Lily,Perennial,900,600,#FF9800,Orange,Green,No,Tough; spreads readily
+Hosta sieboldiana,Hosta,Perennial,600,900,#4CAF50,White,Blue-green,No,Shade lover; slug prone
+Alchemilla mollis,Lady's Mantle,Perennial,450,450,#CDDC39,Yellow-green,Green,No,Ground cover; self-seeds
+Geranium Rozanne,Rozanne Geranium,Perennial,500,600,#3F51B5,Blue-violet,Green,No,Very long flowering season
+Nepeta x faassenii,Catmint,Perennial,450,600,#7C4DFF,Lavender,Grey-green,No,Drought tolerant; attracts bees
+Astrantia major,Masterwort,Perennial,600,450,#F48FB1,Pink-white,Green,No,Part shade; good cut flower
+Rosa rugosa,Rugosa Rose,Shrub,1500,1200,#F44336,Pink/white,Green,No,Very tough; good hips
+Hydrangea macrophylla,Bigleaf Hydrangea,Shrub,1500,1500,#2196F3,Blue/pink,Green,No,Flower colour varies with soil pH
+Viburnum tinus,Laurustinus,Shrub,3000,2500,#FFFFFF,White,Dark green,Yes,Winter flowering; good hedge
+Sarcococca confusa,Sweet Box,Shrub,1000,1000,#FFFFFF,White,Dark green,Yes,Very fragrant winter flowers; shade tolerant
+Cornus sanguinea,Dogwood,Shrub,2500,2000,#FF5722,White,Green,No,Red winter stems; coppice annually
+Betula pendula,Silver Birch,Tree,15000,8000,#795548,Catkins,Green,No,Graceful; white bark
+Acer palmatum,Japanese Maple,Tree,5000,4000,#F44336,,Red/green,No,Autumn colour; sheltered position
+Prunus serrulata,Japanese Cherry,Tree,8000,6000,#E91E63,Pink,Green,No,Spring blossom
+Malus domestica,Apple Tree,Tree,4000,3500,#F8BBD0,Pink-white,Green,No,Fruit tree; needs pollinator
+Sorbus aucuparia,Rowan,Tree,8000,4000,#FF5722,White,Green,No,Orange berries; wildlife tree
+Miscanthus sinensis,Chinese Silver Grass,Grass,2000,1200,#CDDC39,Silver plumes,Green,No,Architectural; late season interest
+Stipa tenuissima,Mexican Feather Grass,Grass,600,300,#E6EE9C,Straw,Green,No,Fine texture; movement
+Pennisetum alopecuroides,Fountain Grass,Grass,1000,800,#9E9D24,Pink-brown,Green,No,Fluffy seed heads
+Carex oshimensis,Japanese Sedge,Grass,300,350,#8BC34A,,Variegated,Yes,Shade tolerant; evergreen
+Hakonechloa macra,Japanese Forest Grass,Grass,400,500,#CDDC39,,Golden-green,No,Cascading habit; shade
+Clematis montana,Mountain Clematis,Climber,8000,5000,#F48FB1,Pink/white,Green,No,Vigorous; spring flowering
+Wisteria sinensis,Chinese Wisteria,Climber,10000,8000,#9C27B0,Purple,Green,No,Fragrant; needs strong support
+Trachelospermum jasminoides,Star Jasmine,Climber,6000,3000,#FFFFFF,White,Dark green,Yes,Fragrant; sheltered wall
+Narcissus pseudonarcissus,Wild Daffodil,Bulb,300,150,#FFC107,Yellow,Green,No,Early spring; naturalises
+Tulipa gesneriana,Garden Tulip,Bulb,500,150,#F44336,Mixed,Green,No,Spring bedding; many cultivars
+Crocus vernus,Spring Crocus,Bulb,100,50,#AB47BC,Purple/white,Green,No,Very early spring
+Allium giganteum,Giant Allium,Bulb,1500,300,#9C27B0,Purple,Green,No,Dramatic spherical heads
+Galanthus nivalis,Snowdrop,Bulb,150,75,#FFFFFF,White,Green,No,Very early; woodland
+Dryopteris filix-mas,Male Fern,Fern,1000,900,#388E3C,,Green,No,Tough native fern; shade
+Polystichum setiferum,Soft Shield Fern,Fern,800,900,#2E7D32,,Green,Yes,Elegant; shade lover
+Athyrium niponicum,Japanese Painted Fern,Fern,400,450,#78909C,,Silver-grey,No,Decorative fronds; shade
+Taxus baccata,Yew,Hedge,3000,2000,#1B5E20,,Dark green,Yes,Classic hedging; dense; toxic
+Buxus sempervirens,Common Box,Hedge,1000,800,#2E7D32,,Dark green,Yes,Topiary and low hedging
+Fagus sylvatica,Beech,Hedge,4000,2000,#795548,,Green/copper,No,Retains dead leaves in winter
+Carpinus betulus,Hornbeam,Hedge,4000,2000,#8D6E63,,Green,No,Similar to beech; tolerates wet
+Ligustrum ovalifolium,Privet,Hedge,3000,2000,#689F38,White,Green,Yes,Fast growing; common hedge
+Nymphaea alba,White Water Lily,Aquatic,100,1500,#FFFFFF,White,Green,No,Needs 300-900mm depth
+Iris pseudacorus,Yellow Flag Iris,Aquatic,1200,600,#FFC107,Yellow,Green,No,Marginal; native
+Caltha palustris,Marsh Marigold,Aquatic,300,300,#FFD600,Yellow,Green,No,Marginal; early spring
+Typha latifolia,Bulrush,Aquatic,2000,600,#795548,Brown,Green,No,Deep marginal; spreading
+Pontederia cordata,Pickerel Weed,Aquatic,700,450,#7C4DFF,Blue,Green,No,Marginal; attracts dragonflies
+Digitalis purpurea,Foxglove,Perennial,1200,450,#E040FB,Purple,Green,No,Biennial; self-seeds; shade tolerant
+Anemone x hybrida,Japanese Anemone,Perennial,1200,600,#F48FB1,Pink/white,Green,No,Late summer/autumn; spreading
+Rudbeckia fulgida,Black-Eyed Susan,Perennial,700,400,#FFC107,Yellow,Green,No,Late summer; tough
+Phlox paniculata,Garden Phlox,Perennial,1000,600,#E91E63,Pink/purple,Green,No,Fragrant; mildew prone
+Sedum spectabile,Ice Plant,Perennial,450,450,#F06292,Pink,Grey-green,No,Late flowering; butterflies

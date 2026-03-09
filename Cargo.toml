@@ -1,0 +1,23 @@
+[workspace]
+members = ["crates/grove-core", "crates/grove-widgets", "crates/grove-app"]
+resolver = "2"
+
+[workspace.dependencies]
+eframe = { version = "0.31", features = ["default", "persistence"] }
+egui = "0.31"
+glam = { version = "0.29", features = ["serde"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+csv = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dxf = "0.5"
+svg2pdf = "0.13"
+usvg = "0.45"
+svg = "0.18"
+image = "0.25"
+rfd = "0.15"
+directories = "6"
+rand = "0.8"
+log = "0.4"
+env_logger = "0.11"

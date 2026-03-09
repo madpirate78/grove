@@ -1,0 +1,19 @@
+[package]
+name = "grove-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+grove-core = { path = "../grove-core" }
+grove-widgets = { path = "../grove-widgets" }
+eframe = { workspace = true }
+egui = { workspace = true }
+glam = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+rfd = { workspace = true }
+directories = { workspace = true }
+serde_json = { workspace = true }
+image = { workspace = true }
