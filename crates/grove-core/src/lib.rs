@@ -9,3 +9,4 @@ pub mod export;
 pub mod drawing;
 pub mod storage;
 pub mod background_image;
+pub mod boolean_ops;

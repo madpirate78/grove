@@ -11,6 +11,8 @@ serde_json = { workspace = true }
 csv = { workspace = true }
 rusqlite = { workspace = true }
 rand = { workspace = true }
+earcutr = "0.4"
+i_overlay = "1"
 log = { workspace = true }
 image = { workspace = true }
 svg = { workspace = true }

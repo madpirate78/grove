@@ -29,6 +29,8 @@ pub struct PolylineData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolygonData {
     pub vertices: Vec<Vec2>,
+    #[serde(default)]
+    pub holes: Vec<Vec<Vec2>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +100,8 @@ pub struct BezierAnchor {
 pub struct BezierPathData {
     pub anchors: Vec<BezierAnchor>,
     pub closed: bool,
+    #[serde(default)]
+    pub holes: Vec<Vec<BezierAnchor>>,
 }
 
 impl BezierPathData {
@@ -244,6 +248,11 @@ impl Geometry {
                 for v in &mut pg.vertices {
                     *v += delta;
                 }
+                for hole in &mut pg.holes {
+                    for v in hole {
+                        *v += delta;
+                    }
+                }
             }
             Geometry::Circle(c) => c.center += delta,
             Geometry::Arc(a) => a.center += delta,
@@ -257,6 +266,17 @@ impl Geometry {
                     }
                     if let Some(ref mut h) = a.handle_out {
                         *h += delta;
+                    }
+                }
+                for hole in &mut bp.holes {
+                    for a in hole {
+                        a.point += delta;
+                        if let Some(ref mut h) = a.handle_in {
+                            *h += delta;
+                        }
+                        if let Some(ref mut h) = a.handle_out {
+                            *h += delta;
+                        }
                     }
                 }
             }
@@ -292,6 +312,11 @@ impl Geometry {
                 for v in &mut pg.vertices {
                     rotate_pt(v);
                 }
+                for hole in &mut pg.holes {
+                    for v in hole {
+                        rotate_pt(v);
+                    }
+                }
             }
             Geometry::Circle(c) => rotate_pt(&mut c.center),
             Geometry::Arc(a) => {
@@ -315,6 +340,17 @@ impl Geometry {
                     }
                     if let Some(ref mut h) = a.handle_out {
                         rotate_pt(h);
+                    }
+                }
+                for hole in &mut bp.holes {
+                    for a in hole {
+                        rotate_pt(&mut a.point);
+                        if let Some(ref mut h) = a.handle_in {
+                            rotate_pt(h);
+                        }
+                        if let Some(ref mut h) = a.handle_out {
+                            rotate_pt(h);
+                        }
                     }
                 }
             }
@@ -357,6 +393,11 @@ impl Geometry {
                 for v in &mut pg.vertices {
                     scale_pt(v);
                 }
+                for hole in &mut pg.holes {
+                    for v in hole {
+                        scale_pt(v);
+                    }
+                }
             }
             Geometry::Circle(c) => {
                 scale_pt(&mut c.center);
@@ -382,6 +423,17 @@ impl Geometry {
                     }
                     if let Some(ref mut h) = a.handle_out {
                         scale_pt(h);
+                    }
+                }
+                for hole in &mut bp.holes {
+                    for a in hole {
+                        scale_pt(&mut a.point);
+                        if let Some(ref mut h) = a.handle_in {
+                            scale_pt(h);
+                        }
+                        if let Some(ref mut h) = a.handle_out {
+                            scale_pt(h);
+                        }
                     }
                 }
             }
@@ -415,7 +467,7 @@ impl Geometry {
                 crate::geometry::point_to_polyline_distance(point, &pl.vertices) <= tolerance
             }
             Geometry::Polygon(pg) => {
-                crate::geometry::point_in_polygon(point, &pg.vertices)
+                crate::geometry::point_in_polygon_with_holes(point, &pg.vertices, &pg.holes)
             }
             Geometry::Circle(c) => {
                 let dist = (point - c.center).length();
@@ -731,6 +783,7 @@ mod tests {
                 Vec2::new(10.0, 0.0),
                 Vec2::new(10.0, 10.0),
             ],
+            holes: Vec::new(),
         });
         geom.scale(Vec2::new(5.0, 5.0), 2.0);
         if let Geometry::Polygon(pg) = &geom {

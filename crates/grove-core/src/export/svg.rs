@@ -564,14 +564,47 @@ fn geometry_to_svg(
         }
 
         Geometry::Polygon(pg) => {
-            let points_str = points_to_string(&pg.vertices);
-            let poly = element::Polygon::new()
-                .set("points", points_str)
-                .set("stroke", stroke_colour)
-                .set("stroke-width", stroke_width)
-                .set("fill", stroke_colour)
-                .set("fill-opacity", 0.12);
-            Some(Box::new(poly))
+            if pg.holes.is_empty() {
+                let points_str = points_to_string(&pg.vertices);
+                let poly = element::Polygon::new()
+                    .set("points", points_str)
+                    .set("stroke", stroke_colour)
+                    .set("stroke-width", stroke_width)
+                    .set("fill", stroke_colour)
+                    .set("fill-opacity", 0.12);
+                Some(Box::new(poly))
+            } else {
+                // Use <path> with fill-rule="evenodd" for polygons with holes
+                let mut data = Data::new();
+                // Outer ring
+                for (i, v) in pg.vertices.iter().enumerate() {
+                    if i == 0 {
+                        data = data.move_to((v.x, v.y));
+                    } else {
+                        data = data.line_to((v.x, v.y));
+                    }
+                }
+                data = data.close();
+                // Hole rings
+                for hole in &pg.holes {
+                    for (i, v) in hole.iter().enumerate() {
+                        if i == 0 {
+                            data = data.move_to((v.x, v.y));
+                        } else {
+                            data = data.line_to((v.x, v.y));
+                        }
+                    }
+                    data = data.close();
+                }
+                let path = element::Path::new()
+                    .set("d", data)
+                    .set("stroke", stroke_colour)
+                    .set("stroke-width", stroke_width)
+                    .set("fill", stroke_colour)
+                    .set("fill-opacity", 0.12)
+                    .set("fill-rule", "evenodd");
+                Some(Box::new(path))
+            }
         }
 
         Geometry::Circle(c) => {
@@ -989,6 +1022,7 @@ mod tests {
                 },
             ],
             closed: false,
+            holes: Vec::new(),
         };
         let mut e = Entity::cad("bezier1", Geometry::BezierPath(bp));
         e.layer_id = project.layers.layers[0].id;

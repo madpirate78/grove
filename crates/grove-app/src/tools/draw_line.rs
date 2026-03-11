@@ -1,92 +1,77 @@
 use glam::Vec2;
 
 use grove_core::commands::AddEntityCommand;
-use grove_core::entity::{Entity, Geometry, PolylineData, LineData};
-use grove_core::snap::{self, SnapResult};
+use grove_core::entity::{BezierPathData, Entity, Geometry, PolygonData, PolylineData, LineData};
+use grove_core::snap::SnapResult;
 
-use super::{collect_snap_centers, collect_snap_segments, ortho_constrain, Tool, ToolContext, ToolResult};
+use super::polygon_drawer::PolygonDrawer;
+use super::{Tool, ToolContext, ToolResult};
 use crate::view::viewport::ViewTransform;
 
-/// Draw polylines by clicking vertices. Double-click or Enter to finish.
-/// Shift constrains to horizontal/vertical from the last point.
+/// Draw polylines/curves by clicking vertices. Press 'C' to toggle curve mode.
+/// Double-click or Enter to finish. Shift constrains to horizontal/vertical.
+///
+/// In line mode: click adds corner points → straight segments.
+/// In curve mode: click-drag adds smooth anchors with symmetric handles → curved segments.
 pub struct DrawLineTool {
-    vertices: Vec<Vec2>,
-    current_pos: Vec2,
-    snap: Option<SnapResult>,
+    drawer: PolygonDrawer,
     layer_id: uuid::Uuid,
 }
 
 impl DrawLineTool {
     pub fn new() -> Self {
         Self {
-            vertices: Vec::new(),
-            current_pos: Vec2::ZERO,
-            snap: None,
+            drawer: PolygonDrawer::new(false), // polyline mode
             layer_id: uuid::Uuid::nil(),
         }
     }
 
-    fn effective_pos(&self, raw: Vec2, ctx: &ToolContext) -> Vec2 {
-        // Ortho constraint first (shift)
-        let constrained = if ctx.shift_held && !self.vertices.is_empty() {
-            ortho_constrain(*self.vertices.last().unwrap(), raw)
-        } else {
-            raw
-        };
-
-        // Then snap
-        if ctx.snap_config.enabled {
-            let (segs, centers) = self.snap_data(ctx);
-            let candidates = snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
-            let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
-            if let Some(result) = snap::best_snap(&candidates, tolerance) {
-                return result.position;
-            }
-        }
-
-        constrained
-    }
-
-    fn snap_data(&self, ctx: &ToolContext) -> (Vec<(Vec2, Vec2)>, Vec<snap::CenterPoint>) {
-        let mut segs = Vec::new();
-        let mut centers = Vec::new();
-        for entity in ctx.entities {
-            collect_snap_segments(&entity.geometry, &mut segs);
-            collect_snap_centers(&entity.geometry, &mut centers);
-        }
-        // Segments from the polyline being drawn
-        for w in self.vertices.windows(2) {
-            segs.push((w[0], w[1]));
-        }
-        (segs, centers)
-    }
-
-    fn finish_polyline(&mut self) -> ToolResult {
-        if let Some(entity) = self.make_entity() {
+    fn finish_path(&mut self, closed: bool) -> ToolResult {
+        if let Some(entity) = self.make_entity(closed) {
             let cmd = Box::new(AddEntityCommand::new(entity));
-            self.vertices.clear();
+            self.drawer.clear();
             ToolResult::EmitAndContinue(cmd)
         } else {
             ToolResult::Continue
         }
     }
 
-    fn make_entity(&self) -> Option<Entity> {
-        if self.vertices.len() < 2 {
+    fn make_entity(&self, closed: bool) -> Option<Entity> {
+        if self.drawer.anchors.len() < 2 {
             return None;
         }
-        let geom = if self.vertices.len() == 2 {
+
+        let geom = if self.drawer.has_curves() {
+            Geometry::BezierPath(BezierPathData {
+                anchors: self.drawer.anchors.clone(),
+                closed,
+                holes: Vec::new(),
+            })
+        } else if closed && self.drawer.anchors.len() >= 3 {
+            Geometry::Polygon(PolygonData {
+                vertices: self.drawer.to_vertices(),
+                holes: Vec::new(),
+            })
+        } else if self.drawer.anchors.len() == 2 {
             Geometry::Line(LineData {
-                start: self.vertices[0],
-                end: self.vertices[1],
+                start: self.drawer.anchors[0].point,
+                end: self.drawer.anchors[1].point,
             })
         } else {
             Geometry::Polyline(PolylineData {
-                vertices: self.vertices.clone(),
+                vertices: self.drawer.to_vertices(),
                 closed: false,
             })
         };
-        let mut entity = Entity::cad("Line", geom);
+
+        let name = if self.drawer.has_curves() {
+            "Curve"
+        } else if closed {
+            "Polygon"
+        } else {
+            "Line"
+        };
+        let mut entity = Entity::cad(name, geom);
         entity.layer_id = self.layer_id;
         entity.colour = [220, 220, 225, 255];
         Some(entity)
@@ -98,62 +83,72 @@ impl Tool for DrawLineTool {
         "Line"
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 
     fn on_mouse_down(&mut self, pos: Vec2, ctx: &ToolContext) -> ToolResult {
         self.layer_id = ctx.active_layer_id;
-        let effective = self.effective_pos(pos, ctx);
-        self.vertices.push(effective);
+        self.drawer.add_anchor(pos, ctx);
         ToolResult::Continue
     }
 
     fn on_mouse_move(&mut self, pos: Vec2, ctx: &ToolContext) {
-        let effective = self.effective_pos(pos, ctx);
-        self.current_pos = effective;
+        self.drawer.update_cursor(pos, ctx);
+    }
 
-        // Update snap indicator
-        if ctx.snap_config.enabled {
-            let constrained = if ctx.shift_held && !self.vertices.is_empty() {
-                ortho_constrain(*self.vertices.last().unwrap(), pos)
-            } else {
-                pos
-            };
-            let (segments, centers) = self.snap_data(ctx);
-            let candidates = snap::snap_points(constrained, &segments, &centers, ctx.snap_config);
-            let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
-            self.snap = snap::best_snap(&candidates, tolerance);
-        } else {
-            self.snap = None;
+    fn on_mouse_up(&mut self, _pos: Vec2, _ctx: &ToolContext) -> ToolResult {
+        self.drawer.finalize_handle();
+        ToolResult::Continue
+    }
+
+    fn on_key_pressed(&mut self, key: egui::Key) -> ToolResult {
+        if key == egui::Key::C {
+            self.drawer.toggle_curve_mode();
         }
+        ToolResult::Continue
     }
 
     fn on_key_enter(&mut self) -> ToolResult {
-        self.finish_polyline()
+        self.finish_path(false)
     }
 
     fn on_key_escape(&mut self) -> ToolResult {
-        if self.vertices.is_empty() {
+        if self.drawer.anchors.is_empty() {
             ToolResult::Finished
         } else {
-            self.vertices.clear();
+            self.drawer.clear();
             ToolResult::Continue
         }
     }
 
     fn on_double_click(&mut self, pos: Vec2, ctx: &ToolContext) -> ToolResult {
-        // Add final point and finish
-        let effective = self.effective_pos(pos, ctx);
-        self.vertices.push(effective);
-        self.finish_polyline()
+        // on_mouse_down already added the anchor for this click.
+        self.drawer.drag_anchor_pos = None;
+        self.drawer.dragging_handle = None;
+
+        // Check if the last anchor is near the first — close as polygon
+        let tolerance = 8.0 / ctx.viewport_zoom;
+        let _ = pos;
+        if self.drawer.anchors.len() >= 4 {
+            let last = self.drawer.anchors.last().unwrap().point;
+            if (last - self.drawer.anchors[0].point).length() <= tolerance {
+                self.drawer.anchors.pop();
+                return self.finish_path(true);
+            }
+        }
+
+        self.finish_path(false)
     }
 
     fn on_right_click(&mut self, _pos: Vec2, _ctx: &ToolContext) -> ToolResult {
-        // Right-click undoes last vertex, or cancels if none left
-        if self.vertices.len() > 1 {
-            self.vertices.pop();
+        self.drawer.drag_anchor_pos = None;
+        self.drawer.dragging_handle = None;
+        if self.drawer.anchors.len() > 1 {
+            self.drawer.anchors.pop();
             ToolResult::Continue
-        } else if !self.vertices.is_empty() {
-            self.vertices.clear();
+        } else if !self.drawer.anchors.is_empty() {
+            self.drawer.clear();
             ToolResult::Continue
         } else {
             ToolResult::Finished
@@ -161,39 +156,17 @@ impl Tool for DrawLineTool {
     }
 
     fn draw_preview(&self, painter: &egui::Painter, viewport: &ViewTransform) {
-        if self.vertices.is_empty() {
-            return;
-        }
-
-        let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(220, 220, 225));
-        let preview_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(220, 220, 225, 140));
-
-        // Draw confirmed segments
-        for w in self.vertices.windows(2) {
-            let a = viewport.world_to_screen(w[0]);
-            let b = viewport.world_to_screen(w[1]);
-            painter.line_segment([a, b], stroke);
-        }
-
-        // Draw preview segment to cursor
-        let last = viewport.world_to_screen(*self.vertices.last().unwrap());
-        let cursor = viewport.world_to_screen(self.current_pos);
-        painter.line_segment([last, cursor], preview_stroke);
-
-        // Draw vertex dots
-        for v in &self.vertices {
-            let screen = viewport.world_to_screen(*v);
-            painter.circle_filled(screen, 3.0, egui::Color32::from_rgb(70, 130, 210));
-        }
-
-        // Draw snap indicator
-        if let Some(ref snap) = self.snap {
-            draw_snap_indicator(painter, viewport, snap);
-        }
+        self.drawer.draw_preview(
+            painter,
+            viewport,
+            [220, 220, 225, 255],
+            false, // no closing line for polyline
+            false, // DrawLineTool didn't have self-intersection prevention
+        );
     }
 
     fn snap_result(&self) -> Option<&SnapResult> {
-        self.snap.as_ref()
+        self.drawer.snap.as_ref()
     }
 }
 
@@ -232,22 +205,34 @@ pub fn draw_snap_indicator(painter: &egui::Painter, viewport: &ViewTransform, sn
         SnapType::Grid => {
             // Crosshair marker
             painter.line_segment(
-                [egui::pos2(screen.x - size, screen.y), egui::pos2(screen.x + size, screen.y)],
+                [
+                    egui::pos2(screen.x - size, screen.y),
+                    egui::pos2(screen.x + size, screen.y),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [egui::pos2(screen.x, screen.y - size), egui::pos2(screen.x, screen.y + size)],
+                [
+                    egui::pos2(screen.x, screen.y - size),
+                    egui::pos2(screen.x, screen.y + size),
+                ],
                 stroke,
             );
         }
         SnapType::Intersection => {
             // X marker
             painter.line_segment(
-                [egui::pos2(screen.x - size, screen.y - size), egui::pos2(screen.x + size, screen.y + size)],
+                [
+                    egui::pos2(screen.x - size, screen.y - size),
+                    egui::pos2(screen.x + size, screen.y + size),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [egui::pos2(screen.x + size, screen.y - size), egui::pos2(screen.x - size, screen.y + size)],
+                [
+                    egui::pos2(screen.x + size, screen.y - size),
+                    egui::pos2(screen.x - size, screen.y + size),
+                ],
                 stroke,
             );
         }

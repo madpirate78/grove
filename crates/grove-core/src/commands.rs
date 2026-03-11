@@ -364,6 +364,146 @@ impl Command for CompoundCommand {
     }
 }
 
+/// Cut a hole in a polygon entity by appending hole vertices.
+#[derive(Debug)]
+pub struct CutoutCommand {
+    entity_id: Uuid,
+    hole_vertices: Vec<glam::Vec2>,
+}
+
+impl CutoutCommand {
+    pub fn new(entity_id: Uuid, hole_vertices: Vec<glam::Vec2>) -> Self {
+        Self {
+            entity_id,
+            hole_vertices,
+        }
+    }
+}
+
+impl Command for CutoutCommand {
+    fn execute(&mut self, project: &mut Project) {
+        if let Some(entity) = project.find_entity_mut(self.entity_id) {
+            match &mut entity.geometry {
+                Geometry::Polygon(pg) => {
+                    pg.holes.push(self.hole_vertices.clone());
+                }
+                Geometry::BezierPath(bp) if bp.closed => {
+                    // For closed bezier paths, flatten the hole and store as vertex hole
+                    // (Curved cutouts in bezier paths would need BezierAnchor holes,
+                    // but for now we store flattened vertices in the polygon holes field)
+                    // Actually, BezierPathData.holes is Vec<Vec<BezierAnchor>>
+                    let anchors: Vec<crate::entity::BezierAnchor> = self
+                        .hole_vertices
+                        .iter()
+                        .map(|v| crate::entity::BezierAnchor {
+                            point: *v,
+                            handle_in: None,
+                            handle_out: None,
+                        })
+                        .collect();
+                    bp.holes.push(anchors);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn undo(&mut self, project: &mut Project) {
+        if let Some(entity) = project.find_entity_mut(self.entity_id) {
+            match &mut entity.geometry {
+                Geometry::Polygon(pg) => {
+                    pg.holes.pop();
+                }
+                Geometry::BezierPath(bp) if bp.closed => {
+                    bp.holes.pop();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn description(&self) -> &str {
+        "Cut hole in polygon"
+    }
+}
+
+/// Boolean difference: subtract a cutout polygon from an entity's geometry.
+/// Handles partial overlaps (notches), full interior (holes), and no-overlap (unchanged).
+#[derive(Debug)]
+pub struct BooleanSubtractCommand {
+    entity_id: Uuid,
+    cutout_vertices: Vec<glam::Vec2>,
+    original_geometry: Option<Geometry>,
+}
+
+impl BooleanSubtractCommand {
+    pub fn new(entity_id: Uuid, cutout_vertices: Vec<glam::Vec2>) -> Self {
+        Self {
+            entity_id,
+            cutout_vertices,
+            original_geometry: None,
+        }
+    }
+}
+
+impl Command for BooleanSubtractCommand {
+    fn execute(&mut self, project: &mut Project) {
+        if let Some(entity) = project.find_entity_mut(self.entity_id) {
+            // Save original for undo
+            self.original_geometry = Some(entity.geometry.clone());
+
+            let (outer, holes) = match &entity.geometry {
+                Geometry::Polygon(pg) => (pg.vertices.clone(), pg.holes.clone()),
+                Geometry::BezierPath(bp) if bp.closed => {
+                    let flat = bp.flatten(16);
+                    // Flatten existing bezier holes too
+                    let flat_holes: Vec<Vec<glam::Vec2>> = bp.holes.iter().map(|hole| {
+                        let hole_path = crate::entity::BezierPathData {
+                            anchors: hole.clone(),
+                            closed: true,
+                            holes: Vec::new(),
+                        };
+                        hole_path.flatten(16)
+                    }).collect();
+                    (flat, flat_holes)
+                }
+                _ => return,
+            };
+
+            use crate::boolean_ops::{polygon_difference, DifferenceResult};
+            match polygon_difference(&outer, &holes, &self.cutout_vertices) {
+                DifferenceResult::Unchanged => {
+                    // Nothing to do — restore original_geometry to None so undo is a no-op
+                    self.original_geometry = None;
+                }
+                DifferenceResult::Modified { outer: new_outer, holes: new_holes } => {
+                    if new_outer.is_empty() {
+                        // Entire polygon was consumed — restore original
+                        self.original_geometry = None;
+                        return;
+                    }
+                    entity.geometry = Geometry::Polygon(crate::entity::PolygonData {
+                        vertices: new_outer,
+                        holes: new_holes,
+                    });
+                }
+            }
+        }
+    }
+
+    fn undo(&mut self, project: &mut Project) {
+        if let Some(original) = self.original_geometry.take() {
+            if let Some(entity) = project.find_entity_mut(self.entity_id) {
+                self.original_geometry = Some(std::mem::replace(&mut entity.geometry, original));
+            }
+        }
+    }
+
+    fn description(&self) -> &str {
+        "Boolean subtract"
+    }
+}
+
 /// Update an entity's domain data (for editable properties panel).
 #[derive(Debug)]
 pub struct UpdateDomainDataCommand {
@@ -715,5 +855,59 @@ mod tests {
 
         history.undo(&mut project);
         assert_eq!(project.find_drawing(id).unwrap().title, "Original");
+    }
+
+    #[test]
+    fn test_cutout_command_undo_redo() {
+        use crate::entity::PolygonData;
+        let mut project = Project::new();
+        let mut history = CommandHistory::new();
+
+        let poly = Entity::cad(
+            "patio",
+            Geometry::Polygon(PolygonData {
+                vertices: vec![
+                    Vec2::new(0.0, 0.0),
+                    Vec2::new(100.0, 0.0),
+                    Vec2::new(100.0, 100.0),
+                    Vec2::new(0.0, 100.0),
+                ],
+                holes: Vec::new(),
+            }),
+        );
+        let id = poly.id;
+        history.execute(Box::new(AddEntityCommand::new(poly)), &mut project);
+
+        let hole = vec![
+            Vec2::new(30.0, 30.0),
+            Vec2::new(70.0, 30.0),
+            Vec2::new(70.0, 70.0),
+            Vec2::new(30.0, 70.0),
+        ];
+        history.execute(Box::new(CutoutCommand::new(id, hole)), &mut project);
+
+        // Polygon should now have 1 hole
+        if let Geometry::Polygon(pg) = &project.find_entity(id).unwrap().geometry {
+            assert_eq!(pg.holes.len(), 1);
+            assert_eq!(pg.holes[0].len(), 4);
+        } else {
+            panic!("expected Polygon");
+        }
+
+        // Undo should remove the hole
+        history.undo(&mut project);
+        if let Geometry::Polygon(pg) = &project.find_entity(id).unwrap().geometry {
+            assert_eq!(pg.holes.len(), 0);
+        } else {
+            panic!("expected Polygon");
+        }
+
+        // Redo should restore it
+        history.redo(&mut project);
+        if let Geometry::Polygon(pg) = &project.find_entity(id).unwrap().geometry {
+            assert_eq!(pg.holes.len(), 1);
+        } else {
+            panic!("expected Polygon");
+        }
     }
 }

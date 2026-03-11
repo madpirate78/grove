@@ -160,24 +160,53 @@ impl Canvas {
             }
             Geometry::Polygon(pg) => {
                 if pg.vertices.len() >= 3 {
-                    let points: Vec<Pos2> = pg
-                        .vertices
-                        .iter()
-                        .map(|v| self.viewport.world_to_screen(*v))
-                        .collect();
+                    let fill = if matches!(entity.domain, DomainData::None) {
+                        Color32::TRANSPARENT
+                    } else {
+                        Color32::from_rgba_unmultiplied(
+                            entity.colour[0],
+                            entity.colour[1],
+                            entity.colour[2],
+                            30,
+                        )
+                    };
 
-                    // Fill
-                    let fill = Color32::from_rgba_unmultiplied(
-                        entity.colour[0],
-                        entity.colour[1],
-                        entity.colour[2],
-                        30,
-                    );
-                    painter.add(egui::Shape::convex_polygon(
-                        points.clone(),
-                        fill,
-                        stroke,
-                    ));
+                    {
+                        // Render all triangles as a single mesh so internal edges
+                        // don't get individually anti-aliased (which causes artifacts).
+                        let triangles = grove_core::geometry::triangulate_polygon_with_holes(
+                            &pg.vertices,
+                            &pg.holes,
+                        );
+                        let mut mesh = egui::Mesh::default();
+                        for tri in &triangles {
+                            let idx = mesh.vertices.len() as u32;
+                            for &v in tri {
+                                mesh.vertices.push(egui::epaint::Vertex {
+                                    pos: self.viewport.world_to_screen(v),
+                                    uv: egui::epaint::WHITE_UV,
+                                    color: fill,
+                                });
+                            }
+                            mesh.indices.extend_from_slice(&[idx, idx + 1, idx + 2]);
+                        }
+                        painter.add(egui::Shape::mesh(mesh));
+                        // Draw outer boundary
+                        let outer_pts: Vec<Pos2> = pg
+                            .vertices
+                            .iter()
+                            .map(|v| self.viewport.world_to_screen(*v))
+                            .collect();
+                        painter.add(egui::Shape::closed_line(outer_pts, stroke));
+                        // Draw hole boundaries
+                        for hole in &pg.holes {
+                            let hole_pts: Vec<Pos2> = hole
+                                .iter()
+                                .map(|v| self.viewport.world_to_screen(*v))
+                                .collect();
+                            painter.add(egui::Shape::closed_line(hole_pts, stroke));
+                        }
+                    }
                 }
             }
             Geometry::Circle(c) => {

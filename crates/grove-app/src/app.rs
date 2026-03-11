@@ -57,7 +57,6 @@ pub enum WorkspaceMode {
 pub enum ActiveToolType {
     Select,
     DrawLine,
-    DrawBezier,
     DrawArc,
     DrawRect,
     DrawCircle,
@@ -67,10 +66,9 @@ pub enum ActiveToolType {
     PlaceGroup,
     PlaceHardscape,
     PlaceLevel,
-    Move,
-    Delete,
     Modify,
     LinearArray,
+    SubtractPolygon,
 }
 
 impl ActiveToolType {
@@ -78,7 +76,6 @@ impl ActiveToolType {
         match self {
             Self::Select => "Select",
             Self::DrawLine => "Line",
-            Self::DrawBezier => "Curve",
             Self::DrawArc => "Arc",
             Self::DrawRect => "Rect",
             Self::DrawCircle => "Circle",
@@ -88,11 +85,89 @@ impl ActiveToolType {
             Self::PlaceGroup => "Group",
             Self::PlaceHardscape => "Hardscape",
             Self::PlaceLevel => "Level",
-            Self::Move => "Move",
-            Self::Delete => "Delete",
             Self::Modify => "Modify",
             Self::LinearArray => "Array",
+            Self::SubtractPolygon => "Subtract",
         }
+    }
+}
+
+/// High-level toolbar mode (column 1): what kind of entity are we working with?
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolMode {
+    Select,
+    Move,
+    Rotate,
+    Shape,
+    Hardscape,
+    Plant,
+    Group,
+    Level,
+    Cutout,
+}
+
+/// Drawing sub-tool (column 2): what geometric method are we using?
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShapeTool {
+    Line,
+    Arc,
+    Circle,
+    Rect,
+    Text,
+    Dim,
+    Point,
+}
+
+impl ShapeTool {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Line => "Line",
+            Self::Arc => "Arc",
+            Self::Circle => "Circle",
+            Self::Rect => "Rect",
+            Self::Text => "Text",
+            Self::Dim => "Dim",
+            Self::Point => "Point",
+        }
+    }
+}
+
+/// Returns the available shape sub-tools for a given mode and sub-type context.
+pub fn available_shapes(
+    mode: ToolMode,
+    hardscape_sub_type: Option<crate::tools::place_hardscape::HardscapeSubType>,
+    level_sub_type: Option<crate::tools::place_level::LevelSubType>,
+) -> &'static [ShapeTool] {
+    use crate::tools::place_hardscape::HardscapeSubType;
+    use crate::tools::place_level::LevelSubType;
+
+    match mode {
+        ToolMode::Shape => &[ShapeTool::Line, ShapeTool::Arc, ShapeTool::Circle, ShapeTool::Rect, ShapeTool::Text, ShapeTool::Dim],
+        ToolMode::Hardscape => {
+            match hardscape_sub_type {
+                Some(HardscapeSubType::Wall | HardscapeSubType::Path | HardscapeSubType::Step | HardscapeSubType::Edging | HardscapeSubType::Fence) => {
+                    &[ShapeTool::Line]
+                }
+                Some(HardscapeSubType::Pergola | HardscapeSubType::House) => {
+                    &[ShapeTool::Rect]
+                }
+                Some(HardscapeSubType::Patio | HardscapeSubType::RaisedBed | HardscapeSubType::Decking | HardscapeSubType::WaterFeature) => {
+                    &[ShapeTool::Line, ShapeTool::Circle, ShapeTool::Rect]
+                }
+                None => &[ShapeTool::Line, ShapeTool::Circle, ShapeTool::Rect],
+            }
+        }
+        ToolMode::Plant => &[ShapeTool::Point],
+        ToolMode::Group => &[ShapeTool::Line],
+        ToolMode::Level => {
+            match level_sub_type {
+                Some(LevelSubType::SpotHeight) => &[ShapeTool::Point],
+                Some(LevelSubType::Contour | LevelSubType::SlopeArrow | LevelSubType::DrainRun) => &[ShapeTool::Line],
+                None => &[ShapeTool::Point, ShapeTool::Line],
+            }
+        }
+        ToolMode::Cutout => &[ShapeTool::Line, ShapeTool::Circle, ShapeTool::Rect],
+        ToolMode::Select | ToolMode::Move | ToolMode::Rotate => &[],
     }
 }
 
@@ -127,6 +202,8 @@ pub struct GroveApp {
     pub snap_config: SnapConfig,
 
     pub active_tool_type: ActiveToolType,
+    pub tool_mode: ToolMode,
+    pub shape_sub_tool: ShapeTool,
     pub select_tool: SelectTool,
     pub draw_tool: Option<Box<dyn Tool>>,
 
@@ -204,6 +281,8 @@ impl GroveApp {
             selection: Selection::default(),
             snap_config: SnapConfig::default(),
             active_tool_type: ActiveToolType::Select,
+            tool_mode: ToolMode::Select,
+            shape_sub_tool: ShapeTool::Line,
             select_tool: SelectTool::new(),
             draw_tool: None,
             cursor_world_pos: None,
@@ -234,6 +313,31 @@ impl GroveApp {
         self.active_tool_type = tool_type;
         self.bezier_edit = None;
         self.box_select_start = None;
+        // Sync tool_mode and shape_sub_tool from active_tool_type
+        self.tool_mode = match tool_type {
+            ActiveToolType::Select => ToolMode::Select,
+            ActiveToolType::Modify => ToolMode::Move, // updated by activate_modify_tool
+            ActiveToolType::DrawLine | ActiveToolType::DrawArc | ActiveToolType::DrawCircle
+            | ActiveToolType::DrawRect | ActiveToolType::Text | ActiveToolType::Dimension => ToolMode::Shape,
+            ActiveToolType::PlacePlant => ToolMode::Plant,
+            ActiveToolType::PlaceGroup => ToolMode::Group,
+            ActiveToolType::PlaceHardscape => ToolMode::Hardscape,
+            ActiveToolType::PlaceLevel => ToolMode::Level,
+            ActiveToolType::SubtractPolygon => ToolMode::Cutout,
+            ActiveToolType::LinearArray => self.tool_mode, // keep current
+        };
+        // Sync shape_sub_tool for Shape mode
+        if let Some(shape) = match tool_type {
+            ActiveToolType::DrawLine => Some(ShapeTool::Line),
+            ActiveToolType::DrawArc => Some(ShapeTool::Arc),
+            ActiveToolType::DrawCircle => Some(ShapeTool::Circle),
+            ActiveToolType::DrawRect => Some(ShapeTool::Rect),
+            ActiveToolType::Text => Some(ShapeTool::Text),
+            ActiveToolType::Dimension => Some(ShapeTool::Dim),
+            _ => None,
+        } {
+            self.shape_sub_tool = shape;
+        }
         self.draw_tool = match tool_type {
             ActiveToolType::DrawLine => {
                 Some(Box::new(crate::tools::draw_line::DrawLineTool::new()))
@@ -243,9 +347,6 @@ impl GroveApp {
             }
             ActiveToolType::DrawCircle => {
                 Some(Box::new(crate::tools::draw_circle::DrawCircleTool::new()))
-            }
-            ActiveToolType::DrawBezier => {
-                Some(Box::new(crate::tools::draw_bezier::DrawBezierTool::new()))
             }
             ActiveToolType::DrawArc => {
                 Some(Box::new(crate::tools::draw_arc::DrawArcTool::new()))
@@ -552,16 +653,16 @@ impl GroveApp {
     }
 
     fn handle_tool_result(&mut self, result: ToolResult) {
-        let is_modify = matches!(
+        let preserve_selection = matches!(
             self.active_tool_type,
-            ActiveToolType::Modify | ActiveToolType::LinearArray
+            ActiveToolType::Modify | ActiveToolType::LinearArray | ActiveToolType::SubtractPolygon
         );
         match result {
             ToolResult::Continue => {}
             ToolResult::Emit(cmd) => {
                 self.history.execute(cmd, &mut self.project);
-                if is_modify {
-                    // Preserve selection so user can chain operations (G then R then S)
+                if preserve_selection {
+                    // Preserve selection (modify chaining, or keep target after cutout)
                 } else {
                     // Auto-select the last entity and return to Select tool
                     if let Some(last) = self.project.entities.last() {
@@ -596,6 +697,149 @@ impl GroveApp {
         };
         self.draw_tool = Some(Box::new(tool));
         self.active_tool_type = ActiveToolType::Modify;
+        self.tool_mode = match mode {
+            crate::tools::modify::ModifyMode::Move => ToolMode::Move,
+            crate::tools::modify::ModifyMode::Rotate => ToolMode::Rotate,
+            _ => ToolMode::Move,
+        };
+    }
+
+    /// Check whether a shape sub-tool should appear active in column 2.
+    fn is_shape_active(
+        &self,
+        shape: ShapeTool,
+        cutout_shape: Option<crate::tools::subtract_polygon::CutoutShape>,
+        hardscape_override: Option<crate::tools::place_hardscape::ShapeOverride>,
+    ) -> bool {
+        match self.tool_mode {
+            ToolMode::Shape => self.shape_sub_tool == shape,
+            ToolMode::Hardscape => {
+                use crate::tools::place_hardscape::ShapeOverride;
+                match shape {
+                    ShapeTool::Line => matches!(hardscape_override, None | Some(ShapeOverride::Line)),
+                    ShapeTool::Circle => hardscape_override == Some(ShapeOverride::Circle),
+                    ShapeTool::Rect => hardscape_override == Some(ShapeOverride::Rectangle),
+                    _ => false,
+                }
+            }
+            ToolMode::Cutout => {
+                use crate::tools::subtract_polygon::CutoutShape;
+                match shape {
+                    ShapeTool::Line => cutout_shape == Some(CutoutShape::Polygon),
+                    ShapeTool::Circle => cutout_shape == Some(CutoutShape::Circle),
+                    ShapeTool::Rect => cutout_shape == Some(CutoutShape::Rectangle),
+                    _ => false,
+                }
+            }
+            // Single-option modes: the one available shape is always active
+            ToolMode::Plant | ToolMode::Group | ToolMode::Level => true,
+            _ => false,
+        }
+    }
+
+    /// Handle a mode button click from column 1.
+    fn apply_mode_change(&mut self, new_mode: ToolMode) {
+        self.tool_mode = new_mode;
+        match new_mode {
+            ToolMode::Select => {
+                self.switch_tool(ActiveToolType::Select);
+            }
+            ToolMode::Move => {
+                self.activate_modify_tool(crate::tools::modify::ModifyMode::Move);
+            }
+            ToolMode::Rotate => {
+                self.activate_modify_tool(crate::tools::modify::ModifyMode::Rotate);
+            }
+            ToolMode::Shape => {
+                // Activate the current shape sub-tool (or default to Line)
+                self.apply_shape_change(self.shape_sub_tool);
+            }
+            ToolMode::Hardscape => {
+                self.switch_tool(ActiveToolType::PlaceHardscape);
+            }
+            ToolMode::Plant => {
+                self.shape_sub_tool = ShapeTool::Point;
+                self.switch_tool(ActiveToolType::PlacePlant);
+            }
+            ToolMode::Group => {
+                self.shape_sub_tool = ShapeTool::Line;
+                self.switch_tool(ActiveToolType::PlaceGroup);
+            }
+            ToolMode::Level => {
+                self.switch_tool(ActiveToolType::PlaceLevel);
+            }
+            ToolMode::Cutout => {
+                // Cutout requires a polygon to be selected
+                let can_subtract = self.selection.single().map(|id| {
+                    self.project.find_entity(id).map(|e| {
+                        matches!(&e.geometry, Geometry::Polygon(_))
+                            || matches!(&e.geometry, Geometry::BezierPath(bp) if bp.closed)
+                    }).unwrap_or(false)
+                }).unwrap_or(false);
+                if can_subtract {
+                    if let Some(sel_id) = self.selection.single() {
+                        let mut tool = crate::tools::subtract_polygon::SubtractPolygonTool::new(sel_id);
+                        // Map current shape_sub_tool to CutoutShape
+                        tool.cutout_shape = match self.shape_sub_tool {
+                            ShapeTool::Circle => crate::tools::subtract_polygon::CutoutShape::Circle,
+                            ShapeTool::Rect => crate::tools::subtract_polygon::CutoutShape::Rectangle,
+                            _ => crate::tools::subtract_polygon::CutoutShape::Polygon,
+                        };
+                        self.draw_tool = Some(Box::new(tool));
+                        self.active_tool_type = ActiveToolType::SubtractPolygon;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Handle a shape sub-tool click from column 2.
+    fn apply_shape_change(&mut self, shape: ShapeTool) {
+        self.shape_sub_tool = shape;
+        match self.tool_mode {
+            ToolMode::Shape => {
+                let tool_type = match shape {
+                    ShapeTool::Line => ActiveToolType::DrawLine,
+                    ShapeTool::Arc => ActiveToolType::DrawArc,
+                    ShapeTool::Circle => ActiveToolType::DrawCircle,
+                    ShapeTool::Rect => ActiveToolType::DrawRect,
+                    ShapeTool::Text => ActiveToolType::Text,
+                    ShapeTool::Dim => ActiveToolType::Dimension,
+                    ShapeTool::Point => ActiveToolType::DrawLine, // fallback
+                };
+                self.switch_tool(tool_type);
+            }
+            ToolMode::Hardscape => {
+                use crate::tools::place_hardscape::ShapeOverride;
+                let ovr = match shape {
+                    ShapeTool::Circle => Some(ShapeOverride::Circle),
+                    ShapeTool::Rect => Some(ShapeOverride::Rectangle),
+                    _ => None, // Line = default polygon drawer
+                };
+                if let Some(ref mut tool) = self.draw_tool {
+                    if let Some(ht) = tool.as_any_mut().downcast_mut::<crate::tools::place_hardscape::PlaceHardscapeTool>() {
+                        ht.shape_override = ovr;
+                        ht.reset_drawing_state();
+                    }
+                }
+            }
+            ToolMode::Cutout => {
+                use crate::tools::subtract_polygon::CutoutShape;
+                let cs = match shape {
+                    ShapeTool::Circle => CutoutShape::Circle,
+                    ShapeTool::Rect => CutoutShape::Rectangle,
+                    _ => CutoutShape::Polygon,
+                };
+                if let Some(ref mut tool) = self.draw_tool {
+                    if let Some(st) = tool.as_any_mut().downcast_mut::<crate::tools::subtract_polygon::SubtractPolygonTool>() {
+                        st.cutout_shape = cs;
+                        st.reset_drawing_state();
+                    }
+                }
+            }
+            // Single-option modes: clicking the shape doesn't change anything
+            _ => {}
+        }
     }
 
     fn activate_array_tool(&mut self) {
@@ -964,10 +1208,6 @@ impl eframe::App for GroveApp {
                         self.switch_tool(ActiveToolType::DrawLine);
                         ui.close_menu();
                     }
-                    if ui.button("Curve").clicked() {
-                        self.switch_tool(ActiveToolType::DrawBezier);
-                        ui.close_menu();
-                    }
                     if ui.button("Rectangle").clicked() {
                         self.switch_tool(ActiveToolType::DrawRect);
                         ui.close_menu();
@@ -1217,7 +1457,7 @@ impl eframe::App for GroveApp {
                         );
                     }
 
-                    // Modify tool status hint
+                    // Tool-specific status hints
                     if let Some(ref tool) = self.draw_tool {
                         if let Some(modify) = tool.as_any_ref().downcast_ref::<crate::tools::modify::ModifyTool>() {
                             ui.colored_label(ThemeColours::ACCENT, modify.status_hint());
@@ -1226,78 +1466,211 @@ impl eframe::App for GroveApp {
                             ui.colored_label(ThemeColours::ACCENT, array.status_hint());
                         }
                     }
+
+                    // Curve mode hint for drawing tools
+                    match self.active_tool_type {
+                        ActiveToolType::DrawLine
+                        | ActiveToolType::PlaceHardscape
+                        | ActiveToolType::SubtractPolygon => {
+                            if let Some(ref tool) = self.draw_tool {
+                                // Check if the drawer is in curve mode by checking the tool name
+                                // and inspecting the polygon_drawer state via downcast
+                                let curve_hint = if self.active_tool_type == ActiveToolType::PlaceHardscape {
+                                    tool.as_any_ref()
+                                        .downcast_ref::<crate::tools::place_hardscape::PlaceHardscapeTool>()
+                                        .and_then(|ht| {
+                                            // Only show curve hint when in line/polygon drawing sub-mode
+                                            match ht.shape_override {
+                                                Some(crate::tools::place_hardscape::ShapeOverride::Circle)
+                                                | Some(crate::tools::place_hardscape::ShapeOverride::Rectangle) => None,
+                                                _ => Some("'C' curve mode"),
+                                            }
+                                        })
+                                } else if self.active_tool_type == ActiveToolType::SubtractPolygon {
+                                    let cutout_shape = self.draw_tool.as_ref().and_then(|t| {
+                                        t.as_any_ref()
+                                            .downcast_ref::<crate::tools::subtract_polygon::SubtractPolygonTool>()
+                                            .map(|st| st.cutout_shape)
+                                    });
+                                    match cutout_shape {
+                                        Some(crate::tools::subtract_polygon::CutoutShape::Circle) => Some("Click center, click edge"),
+                                        Some(crate::tools::subtract_polygon::CutoutShape::Rectangle) => Some("Click corner, click opposite"),
+                                        _ => Some("Draw cutout  'C' curve  Dbl-click finish"),
+                                    }
+                                } else {
+                                    Some("'C' curve mode")
+                                };
+                                if let Some(hint) = curve_hint {
+                                    ui.colored_label(ThemeColours::TEXT_DIM, hint);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    // Hint for polygon selection: press '-' to cut
+                    if self.active_tool_type == ActiveToolType::Select {
+                        if let Some(sel_id) = self.selection.single() {
+                            let is_polygon = self.project.find_entity(sel_id).map(|e| {
+                                matches!(&e.geometry, Geometry::Polygon(_))
+                                    || matches!(&e.geometry, Geometry::BezierPath(bp) if bp.closed)
+                            }).unwrap_or(false);
+                            if is_polygon {
+                                ui.colored_label(ThemeColours::TEXT_DIM, "'-' cutout hole");
+                            }
+                        }
+                    }
                 });
             });
 
-        // Left toolbar (hidden in Drawing mode)
+        // Left toolbar (hidden in Drawing mode) — two-column layout
         if matches!(self.workspace_mode, WorkspaceMode::Model) {
         SidePanel::left("toolbar")
-            .exact_width(56.0)
+            .exact_width(130.0)
             .resizable(false)
             .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    grove_widgets::toolbar::toolbar_frame(ui, |ui| {
-                        let tools_top = [
-                            ActiveToolType::Select,
-                            ActiveToolType::Move,
-                            ActiveToolType::Delete,
-                        ];
-                        for tool in &tools_top {
-                            if grove_widgets::toolbar::tool_button(
-                                ui,
-                                tool.label(),
-                                self.active_tool_type == *tool,
-                            )
-                            .clicked()
-                            {
-                                self.switch_tool(*tool);
-                            }
-                        }
-
-                        grove_widgets::toolbar::tool_separator(ui);
-
-                        let tools_draw = [
-                            ActiveToolType::DrawLine,
-                            ActiveToolType::DrawBezier,
-                            ActiveToolType::DrawArc,
-                            ActiveToolType::DrawCircle,
-                            ActiveToolType::DrawRect,
-                            ActiveToolType::Text,
-                            ActiveToolType::Dimension,
-                        ];
-                        for tool in &tools_draw {
-                            if grove_widgets::toolbar::tool_button(
-                                ui,
-                                tool.label(),
-                                self.active_tool_type == *tool,
-                            )
-                            .clicked()
-                            {
-                                self.switch_tool(*tool);
-                            }
-                        }
-
-                        grove_widgets::toolbar::tool_separator(ui);
-
-                        let tools_garden = [
-                            ActiveToolType::PlacePlant,
-                            ActiveToolType::PlaceGroup,
-                            ActiveToolType::PlaceHardscape,
-                            ActiveToolType::PlaceLevel,
-                        ];
-                        for tool in &tools_garden {
-                            if grove_widgets::toolbar::tool_button(
-                                ui,
-                                tool.label(),
-                                self.active_tool_type == *tool,
-                            )
-                            .clicked()
-                            {
-                                self.switch_tool(*tool);
-                            }
-                        }
-                    });
+                // Gather context for column 2 before entering closure
+                let hardscape_sub_type = self.draw_tool.as_ref().and_then(|t| {
+                    t.as_any_ref()
+                        .downcast_ref::<crate::tools::place_hardscape::PlaceHardscapeTool>()
+                        .map(|ht| ht.sub_type)
                 });
+                let level_sub_type = self.draw_tool.as_ref().and_then(|t| {
+                    t.as_any_ref()
+                        .downcast_ref::<crate::tools::place_level::PlaceLevelTool>()
+                        .map(|lt| lt.sub_type)
+                });
+                let shapes = available_shapes(self.tool_mode, hardscape_sub_type, level_sub_type);
+
+                let blue = Color32::from_rgb(60, 90, 140);
+                let green = Color32::from_rgb(50, 120, 60);
+                let red = Color32::from_rgb(150, 50, 50);
+
+                // Current mode colour for column 2 buttons
+                let mode_colour = match self.tool_mode {
+                    ToolMode::Select | ToolMode::Move | ToolMode::Rotate | ToolMode::Shape => Some(blue),
+                    ToolMode::Hardscape | ToolMode::Plant | ToolMode::Group | ToolMode::Level => Some(green),
+                    ToolMode::Cutout => Some(red),
+                };
+
+                // Determine which cutout shape is active (for column 2 highlighting)
+                let current_cutout_shape = self.draw_tool.as_ref().and_then(|t| {
+                    t.as_any_ref()
+                        .downcast_ref::<crate::tools::subtract_polygon::SubtractPolygonTool>()
+                        .map(|st| st.cutout_shape)
+                });
+
+                // Determine current hardscape shape override (for column 2 highlighting)
+                let current_hardscape_override = self.draw_tool.as_ref().and_then(|t| {
+                    t.as_any_ref()
+                        .downcast_ref::<crate::tools::place_hardscape::PlaceHardscapeTool>()
+                        .and_then(|ht| ht.shape_override)
+                });
+
+                // Track click actions to apply after the UI closure
+                let mut mode_action: Option<ToolMode> = None;
+                let mut delete_action = false;
+                let mut shape_action: Option<ShapeTool> = None;
+
+                grove_widgets::toolbar::toolbar_two_column(ui,
+                    // ─── Column 1: Mode buttons ───
+                    |ui| {
+                        // Select
+                        if grove_widgets::toolbar::tool_button(ui, "Select", self.tool_mode == ToolMode::Select).clicked() {
+                            mode_action = Some(ToolMode::Select);
+                        }
+                        // Move
+                        if grove_widgets::toolbar::tool_button(ui, "Move", self.tool_mode == ToolMode::Move).clicked() {
+                            mode_action = Some(ToolMode::Move);
+                        }
+                        // Rotate
+                        if grove_widgets::toolbar::tool_button(ui, "Rotate", self.tool_mode == ToolMode::Rotate).clicked() {
+                            mode_action = Some(ToolMode::Rotate);
+                        }
+                        // Delete (action button, not a mode)
+                        if grove_widgets::toolbar::tool_button(ui, "Delete", false).clicked() {
+                            delete_action = true;
+                        }
+
+                        grove_widgets::toolbar::tool_separator(ui);
+
+                        // Shape
+                        if grove_widgets::toolbar::tool_button(ui, "Shape", self.tool_mode == ToolMode::Shape).clicked() {
+                            mode_action = Some(ToolMode::Shape);
+                        }
+                        // Hardscape
+                        if grove_widgets::toolbar::tool_button_colored(ui, "Hardsc.", self.tool_mode == ToolMode::Hardscape, Some(green)).clicked() {
+                            mode_action = Some(ToolMode::Hardscape);
+                        }
+                        // Plant
+                        if grove_widgets::toolbar::tool_button_colored(ui, "Plant", self.tool_mode == ToolMode::Plant, Some(green)).clicked() {
+                            mode_action = Some(ToolMode::Plant);
+                        }
+                        // Group
+                        if grove_widgets::toolbar::tool_button_colored(ui, "Group", self.tool_mode == ToolMode::Group, Some(green)).clicked() {
+                            mode_action = Some(ToolMode::Group);
+                        }
+                        // Level
+                        if grove_widgets::toolbar::tool_button_colored(ui, "Level", self.tool_mode == ToolMode::Level, Some(green)).clicked() {
+                            mode_action = Some(ToolMode::Level);
+                        }
+
+                        grove_widgets::toolbar::tool_separator(ui);
+
+                        // Cutout
+                        if grove_widgets::toolbar::tool_button_colored(ui, "Cutout", self.tool_mode == ToolMode::Cutout, Some(red)).clicked() {
+                            mode_action = Some(ToolMode::Cutout);
+                        }
+                    },
+                    // ─── Column 2: Shape sub-tools ───
+                    |ui| {
+                        if shapes.is_empty() {
+                            ui.add_space(4.0);
+                            ui.colored_label(Color32::from_rgb(80, 80, 85), "—");
+                            return;
+                        }
+
+                        for &shape in shapes {
+                            let is_active = self.is_shape_active(shape, current_cutout_shape, current_hardscape_override);
+                            if grove_widgets::toolbar::tool_button_colored(
+                                ui, shape.label(), is_active, mode_colour,
+                            ).clicked() {
+                                shape_action = Some(shape);
+                            }
+                        }
+                    },
+                );
+
+                // ─── Apply actions (outside the closure to satisfy borrow checker) ───
+
+                // Delete action
+                if delete_action {
+                    let ids: Vec<_> = self.selection.ids.clone();
+                    if !ids.is_empty() {
+                        let commands: Vec<Box<dyn grove_core::commands::Command>> = ids
+                            .iter()
+                            .map(|&id| -> Box<dyn grove_core::commands::Command> {
+                                Box::new(grove_core::commands::RemoveEntityCommand::new(id))
+                            })
+                            .collect();
+                        let cmd = Box::new(grove_core::commands::CompoundCommand::new(
+                            commands,
+                            "Delete entities",
+                        ));
+                        self.history.execute(cmd, &mut self.project);
+                    }
+                    self.selection.clear();
+                }
+
+                // Mode change
+                if let Some(new_mode) = mode_action {
+                    self.apply_mode_change(new_mode);
+                }
+
+                // Shape sub-tool change
+                if let Some(shape) = shape_action {
+                    self.apply_shape_change(shape);
+                }
             });
         }
 
@@ -2287,6 +2660,13 @@ impl eframe::App for GroveApp {
                         result = tool.on_key_escape();
                     }
 
+                    // Forward generic key presses to tool
+                    if matches!(result, ToolResult::Continue) {
+                        if ctx.input(|i| i.key_pressed(egui::Key::C)) {
+                            result = tool.on_key_pressed(egui::Key::C);
+                        }
+                    }
+
                     // Put tool back before handling result (which may clear it)
                     self.draw_tool = Some(tool);
                     drop(tool_ctx);
@@ -2408,6 +2788,23 @@ impl eframe::App for GroveApp {
                             drop(tool_ctx);
                             self.activate_array_tool();
                             return;
+                        }
+                        // '-' key: activate subtract/cutout tool on selected polygon
+                        if ctx.input(|i| i.key_pressed(egui::Key::Minus)) {
+                            if let Some(sel_id) = self.selection.single() {
+                                let is_polygon = self.project.find_entity(sel_id).map(|e| {
+                                    matches!(&e.geometry, Geometry::Polygon(_))
+                                        || matches!(&e.geometry, Geometry::BezierPath(bp) if bp.closed)
+                                }).unwrap_or(false);
+                                if is_polygon {
+                                    drop(tool_ctx);
+                                    let tool = crate::tools::subtract_polygon::SubtractPolygonTool::new(sel_id);
+                                    self.draw_tool = Some(Box::new(tool));
+                                    self.active_tool_type = ActiveToolType::SubtractPolygon;
+                                    self.tool_mode = ToolMode::Cutout;
+                                    return;
+                                }
+                            }
                         }
                     }
 

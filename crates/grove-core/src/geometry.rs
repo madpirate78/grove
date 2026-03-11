@@ -77,6 +77,26 @@ pub fn point_in_polygon(point: Vec2, polygon: &[Vec2]) -> bool {
     inside
 }
 
+/// Point-in-polygon test accounting for holes.
+/// Returns true if point is inside the outer polygon and outside all holes.
+pub fn point_in_polygon_with_holes(point: Vec2, outer: &[Vec2], holes: &[Vec<Vec2>]) -> bool {
+    if !point_in_polygon(point, outer) {
+        return false;
+    }
+    for hole in holes {
+        if point_in_polygon(point, hole) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Check if all vertices of `inner` are inside `outer`.
+/// Used to validate that a cutout hole is fully contained within the parent polygon.
+pub fn polygon_contains_polygon(outer: &[Vec2], inner: &[Vec2]) -> bool {
+    inner.iter().all(|p| point_in_polygon(*p, outer))
+}
+
 /// Calculate area of a polygon using the shoelace formula.
 /// Returns positive for counter-clockwise, negative for clockwise.
 pub fn polygon_area(polygon: &[Vec2]) -> f32 {
@@ -289,6 +309,63 @@ pub fn would_self_intersect(existing_vertices: &[Vec2], new_point: Vec2, closing
     false
 }
 
+/// Triangulate a polygon with holes using ear-clipping.
+/// Returns a list of triangle vertex positions suitable for rendering.
+/// Each group of 3 consecutive Vec2 values forms one triangle.
+pub fn triangulate_polygon_with_holes(
+    outer: &[Vec2],
+    holes: &[Vec<Vec2>],
+) -> Vec<[Vec2; 3]> {
+    if outer.len() < 3 {
+        return Vec::new();
+    }
+
+    // Normalize winding: outer must be CCW (negative signed area), holes must be CW (positive)
+    // This is the convention earcutr expects.
+    let mut outer_normalized: Vec<Vec2> = outer.to_vec();
+    if polygon_area(&outer_normalized) > 0.0 {
+        outer_normalized.reverse();
+    }
+    let mut holes_normalized: Vec<Vec<Vec2>> = holes.to_vec();
+    for hole in &mut holes_normalized {
+        if polygon_area(hole) < 0.0 {
+            hole.reverse();
+        }
+    }
+
+    // Flatten all coordinates into a single array for earcutr
+    let mut coords: Vec<f64> = Vec::with_capacity((outer_normalized.len() + holes_normalized.iter().map(|h| h.len()).sum::<usize>()) * 2);
+    for v in &outer_normalized {
+        coords.push(v.x as f64);
+        coords.push(v.y as f64);
+    }
+
+    let mut hole_indices: Vec<usize> = Vec::new();
+    for hole in &holes_normalized {
+        hole_indices.push(coords.len() / 2);
+        for v in hole {
+            coords.push(v.x as f64);
+            coords.push(v.y as f64);
+        }
+    }
+
+    let indices = earcutr::earcut(&coords, &hole_indices, 2).unwrap_or_default();
+
+    // Build all vertices list for indexing
+    let mut all_verts: Vec<Vec2> = outer_normalized;
+    for hole in holes_normalized {
+        all_verts.extend_from_slice(&hole);
+    }
+
+    let mut triangles = Vec::with_capacity(indices.len() / 3);
+    for tri in indices.chunks(3) {
+        if tri.len() == 3 {
+            triangles.push([all_verts[tri[0]], all_verts[tri[1]], all_verts[tri[2]]]);
+        }
+    }
+    triangles
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -443,5 +520,89 @@ mod tests {
         // Actually (5,5)->(0,0) doesn't cross (10,0)-(10,10). Let's do a real crossing:
         // Adding (5,-5) — edge from (10,10) to (5,-5) crosses (0,0)-(10,0)
         assert!(would_self_intersect(&verts, Vec2::new(5.0, -5.0), true));
+    }
+
+    #[test]
+    fn test_point_in_polygon_with_holes() {
+        let outer = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(100.0, 0.0),
+            Vec2::new(100.0, 100.0),
+            Vec2::new(0.0, 100.0),
+        ];
+        let hole = vec![
+            Vec2::new(30.0, 30.0),
+            Vec2::new(70.0, 30.0),
+            Vec2::new(70.0, 70.0),
+            Vec2::new(30.0, 70.0),
+        ];
+        let holes = vec![hole];
+
+        // Point inside outer but outside hole
+        assert!(point_in_polygon_with_holes(Vec2::new(10.0, 10.0), &outer, &holes));
+        // Point inside hole
+        assert!(!point_in_polygon_with_holes(Vec2::new(50.0, 50.0), &outer, &holes));
+        // Point outside outer
+        assert!(!point_in_polygon_with_holes(Vec2::new(150.0, 50.0), &outer, &holes));
+    }
+
+    #[test]
+    fn test_polygon_contains_polygon() {
+        let outer = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(100.0, 0.0),
+            Vec2::new(100.0, 100.0),
+            Vec2::new(0.0, 100.0),
+        ];
+        let inner = vec![
+            Vec2::new(20.0, 20.0),
+            Vec2::new(80.0, 20.0),
+            Vec2::new(80.0, 80.0),
+            Vec2::new(20.0, 80.0),
+        ];
+        assert!(polygon_contains_polygon(&outer, &inner));
+
+        // Inner extends beyond outer
+        let outside = vec![
+            Vec2::new(50.0, 50.0),
+            Vec2::new(150.0, 50.0),
+            Vec2::new(150.0, 150.0),
+        ];
+        assert!(!polygon_contains_polygon(&outer, &outside));
+    }
+
+    #[test]
+    fn test_triangulate_polygon_with_holes() {
+        let outer = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(100.0, 0.0),
+            Vec2::new(100.0, 100.0),
+            Vec2::new(0.0, 100.0),
+        ];
+        let hole = vec![
+            Vec2::new(30.0, 30.0),
+            Vec2::new(70.0, 30.0),
+            Vec2::new(70.0, 70.0),
+            Vec2::new(30.0, 70.0),
+        ];
+        let triangles = triangulate_polygon_with_holes(&outer, &[hole]);
+        // Should produce some triangles (exact count depends on ear-clipping)
+        assert!(!triangles.is_empty());
+        // Each triangle should have 3 vertices
+        for tri in &triangles {
+            assert_eq!(tri.len(), 3);
+        }
+    }
+
+    #[test]
+    fn test_triangulate_no_holes() {
+        let outer = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(10.0, 0.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(0.0, 10.0),
+        ];
+        let triangles = triangulate_polygon_with_holes(&outer, &[]);
+        assert_eq!(triangles.len(), 2); // A quad splits into 2 triangles
     }
 }

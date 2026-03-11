@@ -133,7 +133,7 @@ pub fn draw_drawing_view(
                 }
             }
 
-            draw_entity_simple(&clipped, &entity.geometry, stroke, colour, &to_screen, effective_scale);
+            draw_entity_simple(&clipped, &entity.geometry, &entity.domain, stroke, colour, entity.colour, &to_screen, effective_scale);
         }
 
         // Viewport frame
@@ -537,8 +537,10 @@ fn draw_width_shape_in_viewport(
 fn draw_entity_simple(
     painter: &egui::Painter,
     geometry: &Geometry,
+    domain: &grove_core::entity::DomainData,
     stroke: Stroke,
     colour: Color32,
+    raw_colour: [u8; 4],
     to_screen: &dyn Fn(glam::Vec2) -> Pos2,
     px_per_mm: f32,
 ) {
@@ -563,16 +565,79 @@ fn draw_entity_simple(
         }
         Geometry::Polygon(pg) => {
             if pg.vertices.len() >= 3 {
-                let pts: Vec<Pos2> = pg.vertices.iter().map(|v| to_screen(*v)).collect();
-                let fill = Color32::from_rgba_unmultiplied(colour.r(), colour.g(), colour.b(), 30);
-                painter.add(egui::Shape::convex_polygon(pts, fill, stroke));
+                let fill = if matches!(domain, grove_core::entity::DomainData::None) {
+                    Color32::TRANSPARENT
+                } else {
+                    Color32::from_rgba_unmultiplied(colour.r(), colour.g(), colour.b(), 30)
+                };
+
+                {
+                    // Render all triangles as a single mesh so internal edges
+                    // don't get individually anti-aliased (which causes artifacts).
+                    let triangles = grove_core::geometry::triangulate_polygon_with_holes(
+                        &pg.vertices,
+                        &pg.holes,
+                    );
+                    let mut mesh = egui::Mesh::default();
+                    for tri in &triangles {
+                        let idx = mesh.vertices.len() as u32;
+                        for &v in tri {
+                            mesh.vertices.push(egui::epaint::Vertex {
+                                pos: to_screen(v),
+                                uv: egui::epaint::WHITE_UV,
+                                color: fill,
+                            });
+                        }
+                        mesh.indices.extend_from_slice(&[idx, idx + 1, idx + 2]);
+                    }
+                    painter.add(egui::Shape::mesh(mesh));
+                    // Draw outer boundary
+                    let outer_pts: Vec<Pos2> = pg.vertices.iter().map(|v| to_screen(*v)).collect();
+                    painter.add(egui::Shape::closed_line(outer_pts, stroke));
+                    // Draw hole boundaries
+                    for hole in &pg.holes {
+                        let hole_pts: Vec<Pos2> = hole.iter().map(|v| to_screen(*v)).collect();
+                        painter.add(egui::Shape::closed_line(hole_pts, stroke));
+                    }
+                }
             }
         }
         Geometry::Circle(c) => {
             let center = to_screen(c.center);
             let edge = to_screen(c.center + glam::Vec2::new(c.radius, 0.0));
             let radius_px = (edge.x - center.x).abs();
-            painter.circle_stroke(center, radius_px, stroke);
+
+            if matches!(domain, grove_core::entity::DomainData::Plant(_)) {
+                // Plant rendering: filled circle with label, matching model view
+                let fill = Color32::from_rgba_unmultiplied(
+                    raw_colour[0], raw_colour[1], raw_colour[2], 60,
+                );
+                let stroke_col = Color32::from_rgba_unmultiplied(
+                    raw_colour[0], raw_colour[1], raw_colour[2], 200,
+                );
+                painter.circle_filled(center, radius_px, fill);
+                painter.circle_stroke(center, radius_px, Stroke::new(1.5, stroke_col));
+
+                if radius_px > 8.0 {
+                    if let grove_core::entity::DomainData::Plant(ref pd) = domain {
+                        let label = if !pd.common_name.is_empty() {
+                            &pd.common_name
+                        } else {
+                            &pd.botanical_name
+                        };
+                        let font_size = (radius_px * 0.35).clamp(8.0, 14.0);
+                        painter.text(
+                            center,
+                            egui::Align2::CENTER_CENTER,
+                            label,
+                            egui::FontId::proportional(font_size),
+                            Color32::from_rgba_unmultiplied(240, 240, 245, 200),
+                        );
+                    }
+                }
+            } else {
+                painter.circle_stroke(center, radius_px, stroke);
+            }
         }
         Geometry::Arc(a) => {
             let segments = 32;

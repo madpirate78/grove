@@ -38,6 +38,10 @@ pub struct ModifyTool {
 }
 
 impl ModifyTool {
+    pub fn mode(&self) -> ModifyMode {
+        self.mode
+    }
+
     pub fn new(mode: ModifyMode, target_ids: Vec<Uuid>, entities: &[Entity]) -> Self {
         let original_geometries: Vec<_> = target_ids
             .iter()

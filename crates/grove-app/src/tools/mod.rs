@@ -3,13 +3,14 @@ pub mod draw_line;
 pub mod draw_rect;
 pub mod draw_circle;
 pub mod draw_arc;
-pub mod draw_bezier;
 pub mod draw_dimension;
 pub mod draw_text;
+pub mod polygon_drawer;
 pub mod place_plant;
 pub mod place_group;
 pub mod place_hardscape;
 pub mod place_level;
+pub mod subtract_polygon;
 pub mod modify;
 pub mod array;
 
@@ -67,6 +68,10 @@ pub trait Tool {
         let _ = (pos, ctx);
         ToolResult::Continue
     }
+    /// Handle a generic key press. Tools can override to handle tool-specific keys.
+    fn on_key_pressed(&mut self, _key: egui::Key) -> ToolResult {
+        ToolResult::Continue
+    }
     /// Handle text input (for text tool). Returns true if consumed.
     fn on_text_input(&mut self, _text: &str) -> bool {
         false
@@ -96,6 +101,15 @@ pub fn collect_snap_segments(geom: &Geometry, segs: &mut Vec<(Vec2, Vec2)>) {
             }
             if pg.vertices.len() >= 2 {
                 segs.push((*pg.vertices.last().unwrap(), pg.vertices[0]));
+            }
+            // Hole ring segments are also valid snap targets
+            for hole in &pg.holes {
+                for w in hole.windows(2) {
+                    segs.push((w[0], w[1]));
+                }
+                if hole.len() >= 2 {
+                    segs.push((*hole.last().unwrap(), hole[0]));
+                }
             }
         }
         Geometry::Rectangle(r) => {
