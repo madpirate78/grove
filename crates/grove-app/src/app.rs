@@ -225,7 +225,7 @@ impl GroveApp {
             clipboard: Vec::new(),
             workspace_mode: WorkspaceMode::Model,
             drawing_interaction: crate::view::drawing_view::DrawingInteraction::default(),
-            drawing_viewport: crate::view::viewport::ViewTransform::new(),
+            drawing_viewport: crate::view::viewport::ViewTransform::with_zoom_limits(0.5, 10.0),
             drawing_viewport_fitted_for: None,
         }
     }
@@ -1229,7 +1229,8 @@ impl eframe::App for GroveApp {
                 });
             });
 
-        // Left toolbar
+        // Left toolbar (hidden in Drawing mode)
+        if matches!(self.workspace_mode, WorkspaceMode::Model) {
         SidePanel::left("toolbar")
             .exact_width(56.0)
             .resizable(false)
@@ -1298,10 +1299,12 @@ impl eframe::App for GroveApp {
                     });
                 });
             });
+        }
 
-        // Plant palette (shown when Plant or Group tool active)
-        if self.active_tool_type == ActiveToolType::PlacePlant
-            || self.active_tool_type == ActiveToolType::PlaceGroup
+        // Plant palette (shown when Plant or Group tool active, model mode only)
+        if matches!(self.workspace_mode, WorkspaceMode::Model)
+            && (self.active_tool_type == ActiveToolType::PlacePlant
+                || self.active_tool_type == ActiveToolType::PlaceGroup)
         {
             SidePanel::left("plant_palette")
                 .default_width(260.0)
@@ -1326,8 +1329,10 @@ impl eframe::App for GroveApp {
                 });
         }
 
-        // Hardscape palette
-        if self.active_tool_type == ActiveToolType::PlaceHardscape {
+        // Hardscape palette (model mode only)
+        if matches!(self.workspace_mode, WorkspaceMode::Model)
+            && self.active_tool_type == ActiveToolType::PlaceHardscape
+        {
             SidePanel::left("hardscape_palette")
                 .default_width(240.0)
                 .width_range(200.0..=360.0)
@@ -1344,8 +1349,10 @@ impl eframe::App for GroveApp {
                 });
         }
 
-        // Level palette
-        if self.active_tool_type == ActiveToolType::PlaceLevel {
+        // Level palette (model mode only)
+        if matches!(self.workspace_mode, WorkspaceMode::Model)
+            && self.active_tool_type == ActiveToolType::PlaceLevel
+        {
             SidePanel::left("level_palette")
                 .default_width(240.0)
                 .width_range(200.0..=360.0)
@@ -1362,6 +1369,21 @@ impl eframe::App for GroveApp {
                 });
         }
 
+        // Left annotation palette (shown in Drawing mode, replacing the model-space palettes)
+        let mut annotation_action: Option<crate::panels::annotation_palette::AnnotationPaletteAction> = None;
+        if let WorkspaceMode::Drawing(drawing_id) = self.workspace_mode {
+            SidePanel::left("annotation_palette")
+                .default_width(240.0)
+                .width_range(200.0..=360.0)
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        if let Some(drawing) = self.project.find_drawing(drawing_id) {
+                            annotation_action = crate::panels::annotation_palette::draw_annotation_palette(ui, drawing);
+                        }
+                    });
+                });
+        }
+
         // Right panel
         let mut props_change: Option<(uuid::Uuid, grove_core::entity::DomainData)> = None;
         let mut drawing_action: Option<crate::panels::drawing_properties::DrawingPropertiesAction> = None;
@@ -1374,7 +1396,7 @@ impl eframe::App for GroveApp {
                     // Drawing mode: show drawing properties
                     if let Some(drawing) = self.project.find_drawing(drawing_id) {
                         drawing_action = crate::panels::drawing_properties::draw_drawing_properties(
-                            ui, drawing, &self.project.layers,
+                            ui, drawing, &self.project.layers, &self.project.entities,
                         );
                     } else {
                         ui.label("Drawing not found.");
@@ -1773,6 +1795,27 @@ impl eframe::App for GroveApp {
             }
         }
 
+        // Handle annotation palette actions
+        if let Some(ann_action) = annotation_action {
+            match ann_action {
+                crate::panels::annotation_palette::AnnotationPaletteAction::Updated(new_drawing) => {
+                    if let WorkspaceMode::Drawing(id) = self.workspace_mode {
+                        if let Some(old) = self.project.find_drawing(id) {
+                            let old_clone = old.clone();
+                            let cmd = grove_core::commands::UpdateDrawingCommand::new(id, old_clone, new_drawing);
+                            self.history.execute(Box::new(cmd), &mut self.project);
+                        }
+                    }
+                }
+                crate::panels::annotation_palette::AnnotationPaletteAction::StartAnnotationMode => {
+                    self.drawing_interaction.annotation_mode = true;
+                }
+                crate::panels::annotation_palette::AnnotationPaletteAction::SetLeader(ann_id) => {
+                    self.drawing_interaction.setting_leader = Some(ann_id);
+                }
+            }
+        }
+
         // Apply property edits from the properties panel
         if let Some((id, new_domain)) = props_change {
             if let Some(entity) = self.project.find_entity(id) {
@@ -1811,19 +1854,65 @@ impl eframe::App for GroveApp {
                         }
                     }
 
-                    // Pan (middle or right mouse drag)
-                    if response.dragged_by(egui::PointerButton::Middle)
-                        || response.dragged_by(egui::PointerButton::Secondary)
+                    // Right-drag or middle-drag always pans canvas
+                    if response.dragged_by(egui::PointerButton::Secondary)
+                        || response.dragged_by(egui::PointerButton::Middle)
                     {
                         self.drawing_viewport.pan(response.drag_delta());
                     }
 
-                    // Zoom (scroll wheel)
+                    // Shift+left-drag: pan viewport model_center if over a viewport
+                    if response.dragged_by(egui::PointerButton::Primary) {
+                        let shift = ui.input(|i| i.modifiers.shift);
+                        if shift {
+                            let delta = response.drag_delta();
+                            // Lock to a viewport on drag start
+                            if self.drawing_interaction.panning_viewport.is_none() {
+                                if let Some(hover) = response.hover_pos() {
+                                    if let Some(drawing) = self.project.find_drawing(drawing_id) {
+                                        if let Some((vp, _)) = crate::view::drawing_view::hit_test_viewport_body(
+                                            drawing, &self.drawing_viewport, hover,
+                                        ) {
+                                            self.drawing_interaction.panning_viewport = Some(vp.id);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if let Some(vp_id) = self.drawing_interaction.panning_viewport {
+                                // Read scale from viewport before mutating
+                                let vp_scale = self.project.find_drawing(drawing_id)
+                                    .and_then(|d| d.viewports.iter().find(|v| v.id == vp_id))
+                                    .map(|vp| vp.scale);
+                                if let Some(scale) = vp_scale {
+                                    let zoom = self.drawing_viewport.zoom;
+                                    // screen_delta → model delta: divide by (zoom / scale)
+                                    let model_dx = delta.x * scale as f32 / zoom;
+                                    let model_dy = delta.y * scale as f32 / zoom;
+                                    if let Some(d) = self.project.find_drawing_mut(drawing_id) {
+                                        if let Some(vp) = d.viewports.iter_mut().find(|v| v.id == vp_id) {
+                                            vp.model_center[0] -= model_dx;
+                                            vp.model_center[1] -= model_dy;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Clear panning_viewport when drag stops
+                    if response.drag_stopped() {
+                        self.drawing_interaction.panning_viewport = None;
+                    }
+
+                    // Zoom (scroll wheel) — only when pointer is over the central panel
                     let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
                     if scroll_delta.abs() > 0.0 {
                         if let Some(pointer) = ui.input(|i| i.pointer.hover_pos()) {
-                            let factor = if scroll_delta > 0.0 { 1.1 } else { 1.0 / 1.1 };
-                            self.drawing_viewport.zoom_at(pointer, factor);
+                            if rect.contains(pointer) {
+                                let factor = if scroll_delta > 0.0 { 1.1 } else { 1.0 / 1.1 };
+                                self.drawing_viewport.zoom_at(pointer, factor);
+                            }
                         }
                     }
 
@@ -1849,6 +1938,21 @@ impl eframe::App for GroveApp {
                                 }
                                 crate::view::drawing_view::DrawingViewAction::SelectViewport(vp_id) => {
                                     self.drawing_interaction.selected_viewport = vp_id;
+                                }
+                                crate::view::drawing_view::DrawingViewAction::CreatedAnnotation(ann) => {
+                                    if let Some(d) = self.project.find_drawing_mut(drawing_id) {
+                                        d.annotations.push(ann);
+                                    }
+                                }
+                                crate::view::drawing_view::DrawingViewAction::UpdatedAnnotation(ann_id, new_ann) => {
+                                    if let Some(d) = self.project.find_drawing_mut(drawing_id) {
+                                        if let Some(a) = d.annotations.iter_mut().find(|a| a.id == ann_id) {
+                                            *a = new_ann;
+                                        }
+                                    }
+                                }
+                                crate::view::drawing_view::DrawingViewAction::SelectAnnotation(ann_id) => {
+                                    self.drawing_interaction.selected_annotation = ann_id;
                                 }
                             }
                         }

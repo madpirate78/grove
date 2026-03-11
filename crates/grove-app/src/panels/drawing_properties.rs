@@ -1,6 +1,7 @@
 use egui::Ui;
-use grove_core::drawing::drawing::{Drawing, DrawingViewport, RevisionStatus};
+use grove_core::drawing::drawing::{ColourMode, Drawing, DrawingViewport, RevisionStatus};
 use grove_core::drawing::layout::{Orientation, PaperSize};
+use grove_core::entity::Entity;
 use grove_core::layer::LayerManager;
 
 pub enum DrawingPropertiesAction {
@@ -14,6 +15,7 @@ pub fn draw_drawing_properties(
     ui: &mut Ui,
     drawing: &Drawing,
     layers: &LayerManager,
+    entities: &[Entity],
 ) -> Option<DrawingPropertiesAction> {
     let mut action = None;
     let mut drawing = drawing.clone();
@@ -157,45 +159,47 @@ pub fn draw_drawing_properties(
                 changed = true;
             }
 
-            // Position on sheet
-            ui.collapsing("Position & Size", |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("X:");
-                    if ui.add(egui::DragValue::new(&mut vp.sheet_position[0]).speed(1.0).suffix(" mm")).changed() {
+            // Utility buttons (position/size adjustable by mouse on canvas)
+            if ui.button("Fit to margins").on_hover_text("Resize viewport to fill printable area").clicked() {
+                let (pw, ph) = paper_dims;
+                let [mt, mr, mb, ml] = margins_copy;
+                vp.sheet_position = [ml, mt];
+                vp.sheet_size = [pw - ml - mr, ph - mt - mb];
+                changed = true;
+            }
+            ui.horizontal(|ui| {
+                if ui.button("Center on design").on_hover_text("Set model center to centroid of all entities").clicked() {
+                    if let Some((center, _)) = compute_entity_bounds(entities) {
+                        vp.model_center = center;
                         changed = true;
                     }
-                    ui.label("Y:");
-                    if ui.add(egui::DragValue::new(&mut vp.sheet_position[1]).speed(1.0).suffix(" mm")).changed() {
-                        changed = true;
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label("W:");
-                    if ui.add(egui::DragValue::new(&mut vp.sheet_size[0]).speed(1.0).suffix(" mm").range(10.0..=2000.0)).changed() {
-                        changed = true;
-                    }
-                    ui.label("H:");
-                    if ui.add(egui::DragValue::new(&mut vp.sheet_size[1]).speed(1.0).suffix(" mm").range(10.0..=2000.0)).changed() {
-                        changed = true;
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Center X:");
-                    if ui.add(egui::DragValue::new(&mut vp.model_center[0]).speed(10.0).suffix(" mm")).changed() {
-                        changed = true;
-                    }
-                    ui.label("Y:");
-                    if ui.add(egui::DragValue::new(&mut vp.model_center[1]).speed(10.0).suffix(" mm")).changed() {
-                        changed = true;
-                    }
-                });
-                if ui.button("Fit to margins").on_hover_text("Resize viewport to fill printable area").clicked() {
-                    let (pw, ph) = paper_dims;
-                    let [mt, mr, mb, ml] = margins_copy;
-                    vp.sheet_position = [ml, mt];
-                    vp.sheet_size = [pw - ml - mr, ph - mt - mb];
-                    changed = true;
                 }
+                if ui.button("Fit design").on_hover_text("Center and scale to show all entities").clicked() {
+                    if let Some((center, extent)) = compute_entity_bounds(entities) {
+                        vp.model_center = center;
+                        let margin_factor = 1.1;
+                        let scale_x = if vp.sheet_size[0] > 0.0 { extent[0] * margin_factor / vp.sheet_size[0] } else { 100.0 };
+                        let scale_y = if vp.sheet_size[1] > 0.0 { extent[1] * margin_factor / vp.sheet_size[1] } else { 100.0 };
+                        let scale = scale_x.max(scale_y).max(1.0);
+                        vp.scale = nice_scale(scale);
+                        changed = true;
+                    }
+                }
+            });
+
+            // Colour mode
+            ui.horizontal(|ui| {
+                ui.label("Colour:");
+                egui::ComboBox::from_id_salt(format!("colour_mode_{}", i))
+                    .selected_text(vp.colour_mode.label())
+                    .show_ui(ui, |ui| {
+                        for mode in ColourMode::ALL {
+                            if ui.selectable_label(vp.colour_mode == *mode, mode.label()).clicked() {
+                                vp.colour_mode = *mode;
+                                changed = true;
+                            }
+                        }
+                    });
             });
 
             // Layer overrides
@@ -304,4 +308,45 @@ pub fn draw_drawing_properties(
     }
 
     action
+}
+
+/// Compute bounding box center and extent of all entities.
+/// Returns (center [x,y], extent [width, height]) or None if no entities have geometry.
+fn compute_entity_bounds(entities: &[Entity]) -> Option<([f32; 2], [f32; 2])> {
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
+    let mut found = false;
+
+    for entity in entities {
+        if let Some(bb) = entity.bounding_box() {
+            found = true;
+            min_x = min_x.min(bb.min.x);
+            min_y = min_y.min(bb.min.y);
+            max_x = max_x.max(bb.max.x);
+            max_y = max_y.max(bb.max.y);
+        }
+    }
+
+    if !found {
+        return None;
+    }
+
+    let center = [(min_x + max_x) / 2.0, (min_y + max_y) / 2.0];
+    let extent = [max_x - min_x, max_y - min_y];
+    Some((center, extent))
+}
+
+/// Round a raw scale factor to a nice drawing scale value.
+fn nice_scale(raw: f32) -> u32 {
+    const SCALES: &[u32] = &[1, 2, 5, 10, 20, 25, 50, 75, 100, 150, 200, 250, 500];
+    let raw_u = raw.ceil() as u32;
+    for &s in SCALES {
+        if s >= raw_u {
+            return s;
+        }
+    }
+    // If larger than all nice scales, round up to nearest 50
+    ((raw_u + 49) / 50) * 50
 }

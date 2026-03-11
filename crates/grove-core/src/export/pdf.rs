@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::drawing::drawing::Drawing;
 use crate::project::Project;
@@ -17,6 +18,13 @@ pub fn export_drawing_pdf(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let pdf_bytes = export_drawing_pdf_bytes(project, drawing)?;
     std::fs::write(path, pdf_bytes)?;
+
+    // Also write the SVG alongside the PDF for verification
+    let svg_path = path.with_extension("svg");
+    let svg_string = super::svg::export_drawing_svg(project, drawing, &SvgExportOptions::default())
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let _ = std::fs::write(&svg_path, &svg_string);
+
     Ok(())
 }
 
@@ -27,7 +35,16 @@ pub fn export_drawing_pdf_bytes(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let svg_string = super::svg::export_drawing_svg(project, drawing, &SvgExportOptions::default())
         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-    let tree = usvg::Tree::from_str(&svg_string, &usvg::Options::default())?;
+
+    // Load system fonts so usvg can resolve <text> elements into glyph outlines.
+    // Without this, all text is silently dropped from the PDF.
+    let mut fontdb = usvg::fontdb::Database::new();
+    fontdb.load_system_fonts();
+    let mut opts = usvg::Options::default();
+    opts.font_family = "sans-serif".to_owned();
+    opts.fontdb = Arc::new(fontdb);
+
+    let tree = usvg::Tree::from_str(&svg_string, &opts)?;
     let pdf_bytes = svg2pdf::to_pdf(
         &tree,
         svg2pdf::ConversionOptions::default(),
@@ -87,6 +104,54 @@ mod tests {
 
         // Clean up
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_svg_viewport_content_preserved_in_usvg() {
+        use crate::entity::{Entity, Geometry, LineData};
+
+        let mut project = Project::new();
+        let layer_id = project.layers.layers[0].id;
+        let mut line = Entity::cad(
+            "diag_line",
+            Geometry::Line(LineData {
+                start: Vec2::new(0.0, 0.0),
+                end: Vec2::new(5000.0, 5000.0),
+            }),
+        );
+        line.layer_id = layer_id;
+        line.colour = [255, 0, 0, 255]; // Red so it's definitely visible
+        project.add_entity(line);
+
+        let mut drawing = Drawing::new("01", "Diag Test");
+        drawing.paper_size = crate::drawing::layout::PaperSize::A3;
+        let mut vp = DrawingViewport::new("Main", 100);
+        vp.model_center = [2500.0, 2500.0];
+        drawing.viewports.push(vp);
+
+        let svg_string = super::super::svg::export_drawing_svg(
+            &project, &drawing, &SvgExportOptions::default(),
+        ).unwrap();
+
+        // Verify the SVG contains our line
+        assert!(svg_string.contains("<line"), "SVG should contain a <line> element");
+        assert!(svg_string.contains("clip-path"), "SVG should have clip-path");
+
+        // Parse with usvg and verify geometry is preserved through the pipeline
+        let mut fontdb = usvg::fontdb::Database::new();
+        fontdb.load_system_fonts();
+        let mut opts = usvg::Options::default();
+        opts.font_family = "sans-serif".to_owned();
+        opts.fontdb = Arc::new(fontdb);
+
+        let tree = usvg::Tree::from_str(&svg_string, &opts).unwrap();
+        let processed_svg = tree.to_string(&usvg::WriteOptions::default());
+
+        // usvg converts <line> to <path>, so check for path data
+        assert!(
+            processed_svg.contains("<path") || processed_svg.contains("<line"),
+            "usvg tree should preserve viewport geometry"
+        );
     }
 
     #[test]

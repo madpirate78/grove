@@ -1,7 +1,8 @@
 use egui::{Color32, Pos2, Rect, Stroke, Ui};
-use grove_core::drawing::drawing::{Drawing, DrawingViewport};
+use grove_core::drawing::drawing::{Drawing, DrawingAnnotation, DrawingViewport};
 use grove_core::drawing::layout::is_layer_visible_in_viewport;
 use grove_core::entity::Geometry;
+use grove_core::garden::colour::resolve_colour;
 use grove_core::geometry::{offset_polyline, offset_polyline_sides};
 use grove_core::project::Project;
 
@@ -32,10 +33,18 @@ pub enum ResizeHandle {
 pub struct DrawingInteraction {
     /// Viewport being dragged, with handle type.
     pub drag: Option<(uuid::Uuid, ResizeHandle)>,
-    /// Sheet-space position where a new-viewport drag started (Shift+drag).
-    pub create_start: Option<[f32; 2]>,
     /// Selected viewport ID for showing handles.
     pub selected_viewport: Option<uuid::Uuid>,
+    /// When true, next click places an annotation on the paper.
+    pub annotation_mode: bool,
+    /// Annotation currently being dragged.
+    pub dragging_annotation: Option<uuid::Uuid>,
+    /// When Some, next click in a viewport sets the leader target for this annotation.
+    pub setting_leader: Option<uuid::Uuid>,
+    /// Selected annotation for property editing.
+    pub selected_annotation: Option<uuid::Uuid>,
+    /// Viewport whose model_center is being panned via Shift+left-drag.
+    pub panning_viewport: Option<uuid::Uuid>,
 }
 
 /// Action produced by the drawing view for the app to process.
@@ -43,6 +52,9 @@ pub enum DrawingViewAction {
     UpdatedViewport(uuid::Uuid, DrawingViewport),
     CreatedViewport(DrawingViewport),
     SelectViewport(Option<uuid::Uuid>),
+    CreatedAnnotation(DrawingAnnotation),
+    UpdatedAnnotation(uuid::Uuid, DrawingAnnotation),
+    SelectAnnotation(Option<uuid::Uuid>),
 }
 
 /// Render a drawing sheet on the canvas. Returns actions for the app to process.
@@ -102,10 +114,13 @@ pub fn draw_drawing_view(
             if !is_layer_visible_in_viewport(entity.layer_id, vp, &project.layers) {
                 continue;
             }
+            let resolved = resolve_colour(entity, vp.colour_mode);
             let colour = Color32::from_rgba_premultiplied(
-                entity.colour[0], entity.colour[1], entity.colour[2], entity.colour[3],
+                resolved[0], resolved[1], resolved[2], resolved[3],
             );
-            let stroke = Stroke::new(1.0, colour);
+            let paper_sw = grove_core::export::svg::stroke_weight_for_domain(&entity.domain);
+            let screen_sw = (paper_sw / 0.35).max(0.5);
+            let stroke = Stroke::new(screen_sw, colour);
 
             // Width-aware rendering for walls, paths, steps, edging
             if let Some(w) = entity.domain.width_mm() {
@@ -118,21 +133,23 @@ pub fn draw_drawing_view(
                 }
             }
 
-            draw_entity_simple(&clipped, &entity.geometry, stroke, colour, &to_screen);
+            draw_entity_simple(&clipped, &entity.geometry, stroke, colour, &to_screen, effective_scale);
         }
 
         // Viewport frame
+        let is_panning = interaction.panning_viewport == Some(vp.id);
         let is_selected = interaction.selected_viewport == Some(vp.id);
-        let frame_color = if is_selected { HANDLE_COLOR } else { VIEWPORT_FRAME_COLOR };
-        let frame_width = if is_selected { 1.5 } else { 1.0 };
+        let frame_color = if is_panning { Color32::from_rgb(255, 180, 50) } else if is_selected { HANDLE_COLOR } else { VIEWPORT_FRAME_COLOR };
+        let frame_width = if is_panning { 2.0 } else if is_selected { 1.5 } else { 1.0 };
         painter.rect_stroke(vp_rect, 0.0, Stroke::new(frame_width, frame_color), egui::StrokeKind::Outside);
 
-        // Viewport label
+        // Viewport label (scales with zoom so it stays proportional to paper)
+        let label_size = (3.0 * view.zoom).clamp(4.0, 24.0);
         painter.text(
-            Pos2::new(vp_rect.left() + 4.0, vp_rect.top() + 2.0),
-            egui::Align2::LEFT_TOP,
+            Pos2::new(vp_rect.left() + 2.0 * view.zoom, vp_rect.top() - 1.0 * view.zoom),
+            egui::Align2::LEFT_BOTTOM,
             format!("{} (1:{}@{})", vp.name, vp.scale, drawing.paper_size.label()),
-            egui::FontId::proportional(11.0),
+            egui::FontId::proportional(label_size),
             frame_color,
         );
 
@@ -145,6 +162,9 @@ pub fn draw_drawing_view(
         }
     }
 
+    // --- Annotations ---
+    draw_annotations(painter, view, drawing, interaction);
+
     // --- Title block preview ---
     if drawing.show_title_block {
         draw_title_block_preview(painter, view, project, drawing, paper_w, paper_h);
@@ -153,14 +173,14 @@ pub fn draw_drawing_view(
     // --- North arrow preview ---
     if drawing.show_north_arrow {
         let na_pos = view.world_to_screen(glam::Vec2::new(paper_w - 25.0, mt + 5.0));
-        let na_size = 12.0 * view.zoom;
+        let na_size = (7.5 * view.zoom).clamp(6.0, 40.0);
         painter.text(
             na_pos, egui::Align2::CENTER_TOP, "N",
-            egui::FontId::proportional(na_size.max(8.0)), Color32::from_gray(80),
+            egui::FontId::proportional(na_size), Color32::from_gray(80),
         );
         let arrow_top = Pos2::new(na_pos.x, na_pos.y + na_size * 0.6);
         let arrow_bot = Pos2::new(na_pos.x, na_pos.y + na_size * 1.8);
-        let arr_stroke = Stroke::new(1.5, Color32::from_gray(80));
+        let arr_stroke = Stroke::new(1.0, Color32::from_gray(80));
         painter.line_segment([arrow_top, arrow_bot], arr_stroke);
         let arr_w = na_size * 0.3;
         painter.line_segment([arrow_top, Pos2::new(na_pos.x - arr_w, na_pos.y + na_size)], arr_stroke);
@@ -171,125 +191,141 @@ pub fn draw_drawing_view(
     if drawing.show_scale_bar {
         let scale = drawing.viewports.first().map(|v| v.scale).unwrap_or(100);
         let bar_pos = view.world_to_screen(glam::Vec2::new(ml + 5.0, paper_h - mb - 10.0));
-        let bar_len_px = (60.0 * view.zoom).max(30.0).min(200.0);
+        let bar_len_px = 50.0 * view.zoom;
         painter.rect_filled(
-            Rect::from_min_size(bar_pos, egui::vec2(bar_len_px, 3.0 * view.zoom)),
+            Rect::from_min_size(bar_pos, egui::vec2(bar_len_px, 2.5 * view.zoom)),
             0.0, Color32::from_gray(80),
         );
+        let label_size = (3.0 * view.zoom).clamp(4.0, 20.0);
         painter.text(
-            Pos2::new(bar_pos.x + bar_len_px / 2.0, bar_pos.y - 2.0),
+            Pos2::new(bar_pos.x + bar_len_px / 2.0, bar_pos.y - 1.0 * view.zoom),
             egui::Align2::CENTER_BOTTOM,
             format!("1:{}@{}", scale, drawing.paper_size.label()),
-            egui::FontId::proportional(9.0),
+            egui::FontId::proportional(label_size),
             Color32::from_gray(100),
         );
-    }
-
-    // --- New-viewport creation preview ---
-    if let Some(start) = interaction.create_start {
-        if let Some(hover) = response.hover_pos() {
-            let s1 = view.world_to_screen(glam::Vec2::new(start[0], start[1]));
-            let preview = Rect::from_two_pos(s1, hover);
-            painter.rect_stroke(preview, 0.0, Stroke::new(2.0, HANDLE_COLOR), egui::StrokeKind::Outside);
-            painter.rect_filled(preview, 0.0, Color32::from_rgba_unmultiplied(70, 130, 210, 20));
-        }
     }
 
     // --- Input handling ---
     // We use the Response from allocate_painter so we integrate with egui properly.
 
-    // Left-click: select viewport or start creation
+    // Left-click: annotations first (they render on top), then viewports
     if response.clicked() {
         if let Some(hover) = response.interact_pointer_pos() {
-            let hit = hit_test_viewports(drawing, view, interaction, hover);
-            match hit {
-                HitResult::Handle(id, _) | HitResult::Body(id) => {
-                    // Just select — drag starts on subsequent frames via response.dragged()
-                    if interaction.selected_viewport != Some(id) {
-                        actions.push(DrawingViewAction::SelectViewport(Some(id)));
-                        interaction.selected_viewport = Some(id);
+            // Setting leader mode: click in viewport → set leader target
+            if let Some(ann_id) = interaction.setting_leader {
+                if let Some((vp, _)) = hit_test_viewport_body(drawing, view, hover) {
+                    let model_pt = screen_to_model_via_viewport(hover, vp, view);
+                    let mut ann = drawing.annotations.iter()
+                        .find(|a| a.id == ann_id).cloned();
+                    if let Some(ref mut a) = ann {
+                        a.leader_target_model = Some(model_pt);
+                        a.viewport_id = Some(vp.id);
+                        actions.push(DrawingViewAction::UpdatedAnnotation(ann_id, a.clone()));
                     }
+                    interaction.setting_leader = None;
                 }
-                HitResult::None => {
-                    // Shift+click on paper = start viewport creation
-                    let shift = ui.input(|i| i.modifiers.shift);
-                    if shift && paper_rect.contains(hover) {
-                        let sheet = view.screen_to_world(hover);
-                        interaction.create_start = Some([sheet.x, sheet.y]);
-                    } else if interaction.selected_viewport.is_some() {
-                        actions.push(DrawingViewAction::SelectViewport(None));
-                        interaction.selected_viewport = None;
+            }
+            // Annotation placement mode: click on paper → create annotation
+            else if interaction.annotation_mode {
+                let sheet = view.screen_to_world(hover);
+                if paper_rect.contains(hover) {
+                    let ann = DrawingAnnotation::new("Label", [sheet.x, sheet.y]);
+                    let ann_id = ann.id;
+                    actions.push(DrawingViewAction::CreatedAnnotation(ann));
+                    interaction.selected_annotation = Some(ann_id);
+                    actions.push(DrawingViewAction::SelectAnnotation(Some(ann_id)));
+                }
+                interaction.annotation_mode = false;
+            }
+            // Normal click: check annotations first, then viewports
+            else {
+                let ann_hit = hit_test_annotations(drawing, view, hover);
+                if let Some(ann_id) = ann_hit {
+                    interaction.selected_annotation = Some(ann_id);
+                    actions.push(DrawingViewAction::SelectAnnotation(Some(ann_id)));
+                } else {
+                    if interaction.selected_annotation.is_some() {
+                        interaction.selected_annotation = None;
+                        actions.push(DrawingViewAction::SelectAnnotation(None));
+                    }
+                    let hit = hit_test_viewports(drawing, view, interaction, hover);
+                    match hit {
+                        HitResult::Handle(id, _) | HitResult::Body(id) => {
+                            if interaction.selected_viewport != Some(id) {
+                                actions.push(DrawingViewAction::SelectViewport(Some(id)));
+                                interaction.selected_viewport = Some(id);
+                            }
+                        }
+                        HitResult::None => {
+                            if interaction.selected_viewport.is_some() {
+                                actions.push(DrawingViewAction::SelectViewport(None));
+                                interaction.selected_viewport = None;
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    // Left-drag: move/resize viewport or create new one
-    if response.dragged_by(egui::PointerButton::Primary) {
+    // Left-drag: annotation drag or viewport move/resize
+    // (Skip if Shift+drag is panning a viewport's model_center — handled in app.rs)
+    if response.dragged_by(egui::PointerButton::Primary) && interaction.panning_viewport.is_none() {
         let delta = response.drag_delta();
         let sheet_delta = glam::Vec2::new(delta.x, delta.y) / view.zoom;
 
         if let Some(hover) = response.hover_pos() {
-            // Active drag in progress
-            if let Some((vp_id, handle)) = interaction.drag {
+            // Dragging an annotation
+            if let Some(ann_id) = interaction.dragging_annotation {
+                if let Some(ann) = drawing.annotations.iter().find(|a| a.id == ann_id) {
+                    let mut updated = ann.clone();
+                    updated.sheet_position[0] += sheet_delta.x;
+                    updated.sheet_position[1] += sheet_delta.y;
+                    actions.push(DrawingViewAction::UpdatedAnnotation(ann_id, updated));
+                }
+            }
+            // Active viewport drag in progress
+            else if let Some((vp_id, handle)) = interaction.drag {
                 if let Some(vp) = drawing.viewports.iter().find(|v| v.id == vp_id) {
                     let updated = apply_drag(vp, handle, sheet_delta);
                     actions.push(DrawingViewAction::UpdatedViewport(vp_id, updated));
                 }
             }
-            // Active viewport creation
-            else if interaction.create_start.is_some() {
-                // Preview is drawn above; finalization happens on release
-            }
-            // Start a new drag — figure out what we're dragging
+            // Start a new drag — check annotations first, then viewports
             else {
-                let hit = hit_test_viewports(drawing, view, interaction, hover);
-                match hit {
-                    HitResult::Handle(id, handle) => {
-                        interaction.drag = Some((id, handle));
-                        interaction.selected_viewport = Some(id);
-                        actions.push(DrawingViewAction::SelectViewport(Some(id)));
-                    }
-                    HitResult::Body(id) => {
-                        interaction.drag = Some((id, ResizeHandle::Move));
-                        if interaction.selected_viewport != Some(id) {
+                let ann_hit = hit_test_annotations(drawing, view, hover);
+                if let Some(ann_id) = ann_hit {
+                    interaction.dragging_annotation = Some(ann_id);
+                    interaction.selected_annotation = Some(ann_id);
+                    actions.push(DrawingViewAction::SelectAnnotation(Some(ann_id)));
+                } else {
+                    let hit = hit_test_viewports(drawing, view, interaction, hover);
+                    match hit {
+                        HitResult::Handle(id, handle) => {
+                            interaction.drag = Some((id, handle));
                             interaction.selected_viewport = Some(id);
                             actions.push(DrawingViewAction::SelectViewport(Some(id)));
                         }
-                    }
-                    HitResult::None => {
-                        // Shift+drag on paper = create viewport
-                        let shift = ui.input(|i| i.modifiers.shift);
-                        if shift && paper_rect.contains(hover) {
-                            let sheet = view.screen_to_world(hover);
-                            interaction.create_start = Some([sheet.x, sheet.y]);
+                        HitResult::Body(id) => {
+                            interaction.drag = Some((id, ResizeHandle::Move));
+                            if interaction.selected_viewport != Some(id) {
+                                interaction.selected_viewport = Some(id);
+                                actions.push(DrawingViewAction::SelectViewport(Some(id)));
+                            }
                         }
+                        HitResult::None => {}
                     }
                 }
             }
         }
     }
 
-    // Release: end drag or finalize viewport creation
+    // Release: end drag
     if response.drag_stopped() {
+        interaction.dragging_annotation = None;
         if interaction.drag.is_some() {
             interaction.drag = None;
-        }
-        if let Some(start) = interaction.create_start.take() {
-            if let Some(hover) = response.interact_pointer_pos() {
-                let end = view.screen_to_world(hover);
-                let x = start[0].min(end.x);
-                let y = start[1].min(end.y);
-                let w = (start[0] - end.x).abs();
-                let h = (start[1] - end.y).abs();
-                if w > 5.0 && h > 5.0 {
-                    let mut vp = DrawingViewport::new("New View", 100);
-                    vp.sheet_position = [x, y];
-                    vp.sheet_size = [w, h];
-                    actions.push(DrawingViewAction::CreatedViewport(vp));
-                }
-            }
         }
     }
 
@@ -337,7 +373,7 @@ fn hit_test_viewports(
     HitResult::None
 }
 
-fn vp_screen_rect(vp: &DrawingViewport, view: &ViewTransform) -> Rect {
+pub(crate) fn vp_screen_rect(vp: &DrawingViewport, view: &ViewTransform) -> Rect {
     let tl = view.world_to_screen(glam::Vec2::new(vp.sheet_position[0], vp.sheet_position[1]));
     let br = view.world_to_screen(glam::Vec2::new(
         vp.sheet_position[0] + vp.sheet_size[0],
@@ -422,35 +458,37 @@ fn draw_title_block_preview(
     painter.rect_filled(tb_rect, 0.0, Color32::from_gray(250));
     painter.rect_stroke(tb_rect, 0.0, Stroke::new(1.0, Color32::from_gray(100)), egui::StrokeKind::Outside);
 
-    let tx = tb_tl.x + 4.0;
+    // Scale text sizes with zoom so they stay proportional to the paper
+    let z = view.zoom;
+    let tx = tb_tl.x + 4.0 * z;
     let name = if drawing.title_block.project_name.is_empty() {
         &project.metadata.name
     } else {
         &drawing.title_block.project_name
     };
     painter.text(
-        Pos2::new(tx, tb_tl.y + 4.0), egui::Align2::LEFT_TOP,
-        name, egui::FontId::proportional(12.0), Color32::from_gray(60),
+        Pos2::new(tx, tb_tl.y + 4.0 * z), egui::Align2::LEFT_TOP,
+        name, egui::FontId::proportional((7.0 * z).clamp(4.0, 36.0)), Color32::from_gray(60),
     );
     painter.text(
-        Pos2::new(tx, tb_tl.y + 20.0), egui::Align2::LEFT_TOP,
-        &drawing.title, egui::FontId::proportional(11.0), Color32::from_gray(80),
+        Pos2::new(tx, tb_tl.y + 14.0 * z), egui::Align2::LEFT_TOP,
+        &drawing.title, egui::FontId::proportional((5.0 * z).clamp(4.0, 30.0)), Color32::from_gray(80),
     );
     let rev_text = drawing.current_revision()
         .map(|r| format!(" Rev {}", r.label))
         .unwrap_or_default();
     painter.text(
-        Pos2::new(tx, tb_tl.y + 34.0), egui::Align2::LEFT_TOP,
+        Pos2::new(tx, tb_tl.y + 22.0 * z), egui::Align2::LEFT_TOP,
         format!("Sheet {} | 1:{}@{}{}", drawing.full_sheet_ref(),
             drawing.viewports.first().map(|v| v.scale).unwrap_or(100),
             drawing.paper_size.label(), rev_text),
-        egui::FontId::proportional(10.0), Color32::from_gray(100),
+        egui::FontId::proportional((4.0 * z).clamp(4.0, 26.0)), Color32::from_gray(100),
     );
     if !drawing.title_block.drawn_by.is_empty() {
         painter.text(
-            Pos2::new(tx, tb_tl.y + 46.0), egui::Align2::LEFT_TOP,
+            Pos2::new(tx, tb_tl.y + 30.0 * z), egui::Align2::LEFT_TOP,
             format!("Drawn: {} | {}", drawing.title_block.drawn_by, drawing.title_block.date),
-            egui::FontId::proportional(9.0), Color32::from_gray(120),
+            egui::FontId::proportional((4.0 * z).clamp(4.0, 24.0)), Color32::from_gray(120),
         );
     }
 }
@@ -502,6 +540,7 @@ fn draw_entity_simple(
     stroke: Stroke,
     colour: Color32,
     to_screen: &dyn Fn(glam::Vec2) -> Pos2,
+    px_per_mm: f32,
 ) {
     match geometry {
         Geometry::None => {}
@@ -567,9 +606,10 @@ fn draw_entity_simple(
         }
         Geometry::Text(t) => {
             let pos = to_screen(t.position);
+            let font_px = (t.font_size * px_per_mm).clamp(4.0, 200.0);
             painter.text(
                 pos, egui::Align2::LEFT_TOP, &t.text,
-                egui::FontId::proportional(t.font_size.max(8.0)), colour,
+                egui::FontId::proportional(font_px), colour,
             );
         }
         Geometry::BezierPath(bp) => {
@@ -610,8 +650,9 @@ fn draw_entity_simple(
                     let mid = (ext_s + ext_e) * 0.5;
                     let measurement = (*end - *start).length();
                     let label = text_override.clone().unwrap_or_else(|| format!("{:.0}", measurement));
+                    let dim_font = (3.0 * px_per_mm).clamp(4.0, 40.0);
                     painter.text(to_screen(mid), egui::Align2::CENTER_BOTTOM, label,
-                        egui::FontId::proportional(10.0), colour);
+                        egui::FontId::proportional(dim_font), colour);
                 }
                 DimensionData::Angular { center, start_angle, end_angle, radius } => {
                     let segments = 24;
@@ -632,10 +673,146 @@ fn draw_entity_simple(
                     let end = *center + glam::Vec2::new(*radius * angle.cos(), *radius * angle.sin());
                     painter.line_segment([to_screen(*center), to_screen(end)], stroke);
                     let mid = (*center + end) * 0.5;
+                    let dim_font = (3.0 * px_per_mm).clamp(4.0, 40.0);
                     painter.text(to_screen(mid), egui::Align2::CENTER_BOTTOM,
-                        format!("R{:.0}", radius), egui::FontId::proportional(10.0), colour);
+                        format!("R{:.0}", radius), egui::FontId::proportional(dim_font), colour);
                 }
             }
         }
     }
 }
+
+// --- Annotation rendering ---
+
+const ANNOTATION_COLOR: Color32 = Color32::from_rgb(50, 50, 50);
+const ANNOTATION_SELECTED_COLOR: Color32 = Color32::from_rgb(70, 130, 210);
+const LEADER_COLOR: Color32 = Color32::from_rgb(100, 100, 100);
+
+fn draw_annotations(
+    painter: &egui::Painter,
+    view: &ViewTransform,
+    drawing: &Drawing,
+    interaction: &DrawingInteraction,
+) {
+    for ann in &drawing.annotations {
+        let is_selected = interaction.selected_annotation == Some(ann.id);
+        let text_color = if is_selected { ANNOTATION_SELECTED_COLOR } else { ANNOTATION_COLOR };
+        let font_size_px = ann.font_size * view.zoom;
+
+        let screen_pos = view.world_to_screen(glam::Vec2::new(
+            ann.sheet_position[0], ann.sheet_position[1],
+        ));
+
+        // Leader line (draw before text so it goes behind)
+        if let (Some(target), Some(vp_id)) = (ann.leader_target_model, ann.viewport_id) {
+            if let Some(vp) = drawing.viewports.iter().find(|v| v.id == vp_id) {
+                let sheet_target = model_to_sheet(target, vp);
+                let target_screen = view.world_to_screen(glam::Vec2::new(sheet_target[0], sheet_target[1]));
+                painter.line_segment([screen_pos, target_screen], Stroke::new(0.8, LEADER_COLOR));
+                // Filled arrowhead at target
+                let dir = egui::vec2(target_screen.x - screen_pos.x, target_screen.y - screen_pos.y);
+                let len = (dir.x * dir.x + dir.y * dir.y).sqrt();
+                if len > 1.0 {
+                    let d = dir / len;
+                    let perp = egui::vec2(-d.y, d.x);
+                    let arrow_size = 4.0;
+                    let tip = target_screen;
+                    let left = Pos2::new(
+                        tip.x - d.x * arrow_size + perp.x * arrow_size * 0.4,
+                        tip.y - d.y * arrow_size + perp.y * arrow_size * 0.4,
+                    );
+                    let right = Pos2::new(
+                        tip.x - d.x * arrow_size - perp.x * arrow_size * 0.4,
+                        tip.y - d.y * arrow_size - perp.y * arrow_size * 0.4,
+                    );
+                    painter.add(egui::Shape::convex_polygon(
+                        vec![tip, left, right],
+                        LEADER_COLOR,
+                        Stroke::NONE,
+                    ));
+                }
+            }
+        }
+
+        // Bordered background
+        if ann.bordered {
+            let text_size = egui::vec2(
+                ann.text.len() as f32 * font_size_px * 0.5,
+                font_size_px * 1.3,
+            );
+            let bg_rect = Rect::from_min_size(
+                Pos2::new(screen_pos.x - 2.0, screen_pos.y - 1.0),
+                text_size + egui::vec2(4.0, 2.0),
+            );
+            painter.rect_filled(bg_rect, 1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 220));
+            let border_color = if is_selected { ANNOTATION_SELECTED_COLOR } else { Color32::from_gray(160) };
+            painter.rect_stroke(bg_rect, 1.0, Stroke::new(0.5, border_color), egui::StrokeKind::Outside);
+        }
+
+        // Text
+        painter.text(
+            screen_pos, egui::Align2::LEFT_TOP, &ann.text,
+            egui::FontId::proportional(font_size_px.max(6.0)), text_color,
+        );
+    }
+}
+
+/// Convert model-space point to sheet coords through a viewport.
+fn model_to_sheet(model_pt: [f32; 2], vp: &DrawingViewport) -> [f32; 2] {
+    let vp_cx = vp.sheet_position[0] + vp.sheet_size[0] / 2.0;
+    let vp_cy = vp.sheet_position[1] + vp.sheet_size[1] / 2.0;
+    [
+        vp_cx + (model_pt[0] - vp.model_center[0]) / vp.scale as f32,
+        vp_cy + (model_pt[1] - vp.model_center[1]) / vp.scale as f32,
+    ]
+}
+
+/// Convert screen position to model-space through a viewport.
+fn screen_to_model_via_viewport(screen_pos: Pos2, vp: &DrawingViewport, view: &ViewTransform) -> [f32; 2] {
+    let sheet = view.screen_to_world(screen_pos);
+    let vp_cx = vp.sheet_position[0] + vp.sheet_size[0] / 2.0;
+    let vp_cy = vp.sheet_position[1] + vp.sheet_size[1] / 2.0;
+    [
+        (sheet.x - vp_cx) * vp.scale as f32 + vp.model_center[0],
+        (sheet.y - vp_cy) * vp.scale as f32 + vp.model_center[1],
+    ]
+}
+
+/// Hit-test annotations. Returns the first annotation whose text rect contains hover.
+fn hit_test_annotations(drawing: &Drawing, view: &ViewTransform, hover: Pos2) -> Option<uuid::Uuid> {
+    // Check in reverse order (last drawn = on top)
+    for ann in drawing.annotations.iter().rev() {
+        let screen_pos = view.world_to_screen(glam::Vec2::new(
+            ann.sheet_position[0], ann.sheet_position[1],
+        ));
+        let font_size_px = ann.font_size * view.zoom;
+        let text_size = egui::vec2(
+            ann.text.len() as f32 * font_size_px * 0.5,
+            font_size_px * 1.3,
+        );
+        let hit_rect = Rect::from_min_size(
+            Pos2::new(screen_pos.x - 4.0, screen_pos.y - 4.0),
+            text_size + egui::vec2(8.0, 8.0),
+        );
+        if hit_rect.contains(hover) {
+            return Some(ann.id);
+        }
+    }
+    None
+}
+
+/// Hit-test viewport bodies, returning the viewport and its index.
+pub(crate) fn hit_test_viewport_body<'a>(
+    drawing: &'a Drawing,
+    view: &ViewTransform,
+    hover: Pos2,
+) -> Option<(&'a DrawingViewport, usize)> {
+    for (i, vp) in drawing.viewports.iter().enumerate().rev() {
+        let rect = vp_screen_rect(vp, view);
+        if rect.contains(hover) {
+            return Some((vp, i));
+        }
+    }
+    None
+}
+

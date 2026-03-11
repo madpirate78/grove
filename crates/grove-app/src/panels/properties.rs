@@ -247,6 +247,11 @@ pub fn draw_properties_panel(
             });
             ui.checkbox(&mut dr.manhole, "Manhole");
         }
+        DomainData::House(h) => {
+            drag_mm(ui, "Wall Thickness", &mut h.wall_thickness_mm);
+            drag_mm(ui, "Height", &mut h.height_mm);
+            combo_material(ui, &mut h.base.material);
+        }
         DomainData::None | DomainData::PlantGroup(_) | DomainData::TitleBlock(_) | DomainData::Legend(_) => {
             // No editable properties
             return None;

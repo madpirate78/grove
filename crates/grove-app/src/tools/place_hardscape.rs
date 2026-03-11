@@ -28,6 +28,7 @@ pub enum HardscapeSubType {
     Pergola,
     Decking,
     WaterFeature,
+    House,
 }
 
 impl HardscapeSubType {
@@ -42,6 +43,7 @@ impl HardscapeSubType {
         Self::Pergola,
         Self::Decking,
         Self::WaterFeature,
+        Self::House,
     ];
 
     pub fn label(&self) -> &'static str {
@@ -56,6 +58,7 @@ impl HardscapeSubType {
             Self::Pergola => "Pergola",
             Self::Decking => "Decking",
             Self::WaterFeature => "Water Feature",
+            Self::House => "House",
         }
     }
 
@@ -63,7 +66,7 @@ impl HardscapeSubType {
         match self {
             Self::Wall | Self::Path | Self::Step | Self::Edging | Self::Fence => DrawingMode::Polyline,
             Self::Patio | Self::RaisedBed | Self::Decking => DrawingMode::Polygon,
-            Self::Pergola => DrawingMode::Rectangle,
+            Self::Pergola | Self::House => DrawingMode::Rectangle,
             Self::WaterFeature => DrawingMode::PointOrPolygon,
         }
     }
@@ -76,6 +79,7 @@ impl HardscapeSubType {
             Self::Edging => "GD_HARDSCAPE_EDGING",
             Self::Fence | Self::Pergola => "GD_HARDSCAPE_STRUCTURES",
             Self::WaterFeature => "GD_HARDSCAPE_WATER",
+            Self::House => "GD_BUILDINGS",
         }
     }
 
@@ -91,6 +95,7 @@ impl HardscapeSubType {
             Self::Pergola => parse_hex_colour("#A0522D"),
             Self::Decking => parse_hex_colour("#C19A6B"),
             Self::WaterFeature => parse_hex_colour("#3B7DD8"),
+            Self::House => parse_hex_colour("#8B7355"),
         }
     }
 }
@@ -129,6 +134,7 @@ pub struct PlaceHardscapeTool {
     pub pergola: PergolaData,
     pub decking: DeckingData,
     pub water_feature: WaterFeatureData,
+    pub house: HouseData,
     // Drawing state
     vertices: Vec<Vec2>,
     current_pos: Vec2,
@@ -152,6 +158,7 @@ impl PlaceHardscapeTool {
             pergola: PergolaData::default(),
             decking: DeckingData::default(),
             water_feature: WaterFeatureData::default(),
+            house: HouseData::default(),
             vertices: Vec::new(),
             current_pos: Vec2::ZERO,
             first_corner: None,
@@ -297,6 +304,7 @@ impl PlaceHardscapeTool {
             HardscapeSubType::Pergola => DomainData::Pergola(self.pergola.clone()),
             HardscapeSubType::Decking => DomainData::Decking(self.decking.clone()),
             HardscapeSubType::WaterFeature => DomainData::WaterFeature(self.water_feature.clone()),
+            HardscapeSubType::House => DomainData::House(self.house.clone()),
         };
 
         let mut entity = Entity::new(self.sub_type.label(), geom, domain);

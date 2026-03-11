@@ -124,6 +124,12 @@ pub fn draw_hardscape_palette(ui: &mut Ui, tool: &mut PlaceHardscapeTool) -> boo
             ui.checkbox(&mut wf.lighting, "Lighting");
             combo_filtration(ui, &mut wf.filtration);
         }
+        HardscapeSubType::House => {
+            let h = &mut tool.house;
+            drag_mm(ui, "Wall Thickness", &mut h.wall_thickness_mm);
+            drag_mm(ui, "Height", &mut h.height_mm);
+            combo_material(ui, &mut h.base.material);
+        }
     }
 
     sub_type_changed

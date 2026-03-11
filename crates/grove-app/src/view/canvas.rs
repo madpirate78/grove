@@ -38,12 +38,14 @@ impl Canvas {
             self.viewport.pan(response.drag_delta());
         }
 
-        // Handle zoom (scroll)
+        // Handle zoom (scroll) — only when pointer is over the canvas rect
         let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
         if scroll_delta.abs() > 0.0 {
             if let Some(pointer) = ui.input(|i| i.pointer.hover_pos()) {
-                let factor = if scroll_delta > 0.0 { 1.1 } else { 1.0 / 1.1 };
-                self.viewport.zoom_at(pointer, factor);
+                if rect.contains(pointer) {
+                    let factor = if scroll_delta > 0.0 { 1.1 } else { 1.0 / 1.1 };
+                    self.viewport.zoom_at(pointer, factor);
+                }
             }
         }
 

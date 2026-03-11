@@ -503,6 +503,7 @@ pub enum DomainData {
     Contour(ContourData),
     SlopeArrow(SlopeArrowData),
     DrainRun(DrainRunData),
+    House(HouseData),
     TitleBlock(TitleBlockData),
     Legend(LegendData),
 }
@@ -516,6 +517,25 @@ impl DomainData {
             Self::Path(p) => Some(p.width_mm as f32),
             Self::Step(s) => Some(s.width_mm as f32),
             Self::Edging(e) => Some(e.width_mm as f32),
+            Self::House(h) => Some(h.wall_thickness_mm as f32),
+            _ => None,
+        }
+    }
+
+    /// Returns the height in mm for domain types that have a vertical dimension.
+    /// Used for height-proportional stroke weights in SVG/PDF export.
+    pub fn height_mm(&self) -> Option<i32> {
+        match self {
+            Self::Plant(p) => Some(p.height_mm),
+            Self::Wall(w) => Some(w.height_mm),
+            Self::Fence(f) => Some(f.height_mm),
+            Self::Pergola(p) => Some(p.height_mm),
+            Self::RaisedBed(r) => Some(r.height_mm),
+            Self::Decking(d) => Some(d.deck_height_mm),
+            Self::Step(s) => Some(s.riser_height_mm),
+            Self::Edging(e) => Some(e.height_mm),
+            Self::WaterFeature(w) => Some(w.depth_mm),
+            Self::House(h) => Some(h.height_mm),
             _ => None,
         }
     }

@@ -448,6 +448,30 @@ impl Default for DeckingData {
 }
 
 // ---------------------------------------------------------------------------
+// House
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HouseData {
+    pub base: HardscapeBase,
+    pub wall_thickness_mm: i32,
+    pub height_mm: i32,
+}
+
+impl Default for HouseData {
+    fn default() -> Self {
+        Self {
+            base: HardscapeBase {
+                colour_code: "#8B7355".into(),
+                ..Default::default()
+            },
+            wall_thickness_mm: 300,
+            height_mm: 2700,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Water Feature
 // ---------------------------------------------------------------------------
 

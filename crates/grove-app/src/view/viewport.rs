@@ -19,8 +19,18 @@ impl ViewTransform {
         Self {
             offset: Vec2::ZERO,
             zoom: 1.0,
-            min_zoom: 0.01,
-            max_zoom: 100.0,
+            min_zoom: 0.001,
+            max_zoom: 10.0,
+        }
+    }
+
+    /// Create a ViewTransform with custom zoom limits.
+    pub fn with_zoom_limits(min_zoom: f32, max_zoom: f32) -> Self {
+        Self {
+            offset: Vec2::ZERO,
+            zoom: 1.0,
+            min_zoom,
+            max_zoom,
         }
     }
 
