@@ -43,7 +43,7 @@ impl Canvas {
         if scroll_delta.abs() > 0.0 {
             if let Some(pointer) = ui.input(|i| i.pointer.hover_pos()) {
                 if rect.contains(pointer) {
-                    let factor = if scroll_delta > 0.0 { 1.1 } else { 1.0 / 1.1 };
+                    let factor = if scroll_delta > 0.0 { 1.05 } else { 1.0 / 1.05 };
                     self.viewport.zoom_at(pointer, factor);
                 }
             }

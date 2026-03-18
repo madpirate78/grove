@@ -209,6 +209,20 @@ pub(crate) fn combo_drain_type(ui: &mut Ui, dt: &mut DrainType) {
         });
 }
 
+pub(crate) fn combo_surface_label(ui: &mut Ui, label: &mut SurfaceLabel) {
+    let current_text = label.label().to_string();
+    egui::ComboBox::from_label("Surface")
+        .selected_text(&current_text)
+        .show_ui(ui, |ui| {
+            for preset in SurfaceLabel::PRESET {
+                let text = preset.label();
+                if ui.selectable_label(label == preset, text).clicked() {
+                    *label = preset.clone();
+                }
+            }
+        });
+}
+
 pub(crate) fn combo_handrail_side(ui: &mut Ui, hs: &mut HandrailSide) {
     egui::ComboBox::from_label("Handrail Side")
         .selected_text(format!("{:?}", hs))

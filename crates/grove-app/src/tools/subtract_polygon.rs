@@ -74,7 +74,10 @@ impl SubtractPolygonTool {
                 collect_snap_segments(&entity.geometry, &mut segs);
                 collect_snap_centers(&entity.geometry, &mut centers);
             }
-            let candidates = grove_core::snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
+            let mut candidates = grove_core::snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
+            if !ctx.smart_points.is_empty() {
+                candidates.extend(super::extension_snap_candidates(constrained, ctx.smart_points));
+            }
             let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
             if let Some(result) = grove_core::snap::best_snap(&candidates, tolerance) {
                 return result.position;
@@ -87,7 +90,11 @@ impl SubtractPolygonTool {
         if self.drawer.anchors.len() < 3 {
             return ToolResult::Continue;
         }
-        let cutout_vertices = self.drawer.to_vertices();
+        let cutout_vertices = if self.drawer.has_curves() {
+            self.drawer.to_bezier_path_closed().flatten(32)
+        } else {
+            self.drawer.to_vertices()
+        };
         let cmd = Box::new(BooleanSubtractCommand::new(self.target_entity_id, cutout_vertices));
         self.drawer.clear();
         ToolResult::Emit(cmd)
@@ -195,7 +202,10 @@ impl Tool for SubtractPolygonTool {
                         collect_snap_segments(&entity.geometry, &mut segs);
                         collect_snap_centers(&entity.geometry, &mut centers);
                     }
-                    let candidates = grove_core::snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
+                    let mut candidates = grove_core::snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
+                    if !ctx.smart_points.is_empty() {
+                        candidates.extend(super::extension_snap_candidates(constrained, ctx.smart_points));
+                    }
                     let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
                     self.snap = grove_core::snap::best_snap(&candidates, tolerance);
                 } else {
@@ -213,30 +223,29 @@ impl Tool for SubtractPolygonTool {
     }
 
     fn on_key_pressed(&mut self, key: egui::Key) -> ToolResult {
-        if key == egui::Key::C && self.cutout_shape == CutoutShape::Polygon {
-            self.drawer.toggle_curve_mode();
+        if self.cutout_shape == CutoutShape::Polygon {
+            match key {
+                egui::Key::C => self.drawer.toggle_curve_mode(),
+                egui::Key::E => self.drawer.toggle_edge_trace(),
+                egui::Key::Tab => self.drawer.edge_trace_flip(),
+                _ => {}
+            }
         }
         ToolResult::Continue
     }
 
     fn on_key_enter(&mut self) -> ToolResult {
         match self.cutout_shape {
-            CutoutShape::Polygon => {
-                if self.drawer.anchors.len() >= 3 {
-                    let cutout_vertices = self.drawer.to_vertices();
-                    let cmd = Box::new(BooleanSubtractCommand::new(self.target_entity_id, cutout_vertices));
-                    self.drawer.clear();
-                    ToolResult::Emit(cmd)
-                } else {
-                    ToolResult::Continue
-                }
-            }
+            CutoutShape::Polygon => self.finish_cutout_polygon(),
             CutoutShape::Circle => self.finish_cutout_circle(),
             CutoutShape::Rectangle => self.finish_cutout_rect(),
         }
     }
 
     fn on_key_escape(&mut self) -> ToolResult {
+        if self.cutout_shape == CutoutShape::Polygon && self.drawer.edge_trace_cancel() {
+            return ToolResult::Continue;
+        }
         match self.cutout_shape {
             CutoutShape::Polygon => {
                 if self.drawer.anchors.is_empty() {

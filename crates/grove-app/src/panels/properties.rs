@@ -247,6 +247,23 @@ pub fn draw_properties_panel(
             });
             ui.checkbox(&mut dr.manhole, "Manhole");
         }
+        DomainData::Surface(s) => {
+            ui.label(format!("Surface: {}", s.label.label()));
+            if let Some(ref mut w) = s.width_mm {
+                drag_mm(ui, "Width", w);
+            }
+            ui.horizontal(|ui| {
+                ui.label("Pattern:");
+                ui.text_edit_singleline(&mut s.laying_pattern);
+            });
+            combo_drainage(ui, &mut s.drainage);
+            combo_material(ui, &mut s.base.material);
+            drag_mm(ui, "Sub-base", &mut s.sub_base_depth_mm);
+            if matches!(s.label, grove_core::garden::hardscape::SurfaceLabel::Decking) {
+                drag_mm(ui, "Board W", &mut s.board_width_mm);
+                drag_mm(ui, "Board Gap", &mut s.board_gap_mm);
+            }
+        }
         DomainData::House(h) => {
             drag_mm(ui, "Wall Thickness", &mut h.wall_thickness_mm);
             drag_mm(ui, "Height", &mut h.height_mm);

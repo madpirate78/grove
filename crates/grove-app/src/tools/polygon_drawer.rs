@@ -1,12 +1,38 @@
 use glam::Vec2;
 
 use grove_core::entity::{BezierAnchor, BezierPathData};
-use grove_core::geometry::would_self_intersect;
+use grove_core::geometry::{
+    closest_point_on_polyline, extract_polyline_section, visible_edges, would_self_intersect,
+    VisibleEdge,
+};
 use grove_core::snap::{self, SnapResult};
 
 use super::draw_line::draw_snap_indicator;
 use super::{collect_snap_centers, collect_snap_segments, ortho_constrain, ToolContext};
 use crate::view::viewport::ViewTransform;
+
+/// First trace point on an edge.
+pub struct EdgeTracePoint {
+    pub position: Vec2,
+    pub segment_idx: usize,
+    pub t: f32,
+}
+
+/// State for an in-progress edge trace.
+pub struct EdgeTraceState {
+    /// Cached visible edge being traced.
+    pub edge_vertices: Vec<Vec2>,
+    /// Whether the edge is a closed loop.
+    pub edge_closed: bool,
+    /// First trace point (None until first click).
+    pub start: Option<EdgeTracePoint>,
+    /// Preview vertices from start to current cursor projection.
+    pub preview: Vec<Vec2>,
+    /// Flip direction for closed edges.
+    pub reversed: bool,
+    /// How many anchors the last completed trace inserted.
+    pub last_insert_count: usize,
+}
 
 /// Shared drawing state machine for placing vertices with optional bezier curve mode.
 /// Used by both `DrawLineTool` and `PlaceHardscapeTool` to avoid duplicating the
@@ -22,6 +48,12 @@ pub struct PolygonDrawer {
     pub self_intersects: bool,
     /// true = polygon (checks closing edge for intersection), false = polyline.
     closing_mode: bool,
+    /// Whether edge-trace mode is active (user pressed E).
+    pub edge_trace_active: bool,
+    /// Current edge-trace state (Some when tracing an edge).
+    pub edge_trace: Option<EdgeTraceState>,
+    /// Nearest edge highlight info for pre-click hover preview.
+    edge_trace_hover: Option<(Vec<Vec2>, bool)>,
 }
 
 impl PolygonDrawer {
@@ -35,6 +67,9 @@ impl PolygonDrawer {
             snap: None,
             self_intersects: false,
             closing_mode,
+            edge_trace_active: false,
+            edge_trace: None,
+            edge_trace_hover: None,
         }
     }
 
@@ -57,7 +92,10 @@ impl PolygonDrawer {
 
         if ctx.snap_config.enabled {
             let (segs, centers) = self.snap_data(ctx);
-            let candidates = snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
+            let mut candidates = snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
+            if !ctx.smart_points.is_empty() {
+                candidates.extend(super::extension_snap_candidates(constrained, ctx.smart_points));
+            }
             let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
             if let Some(result) = snap::best_snap(&candidates, tolerance) {
                 return result.position;
@@ -90,11 +128,12 @@ impl PolygonDrawer {
 
     /// Add an anchor at the given position. Returns false if self-intersecting.
     pub fn add_anchor(&mut self, pos: Vec2, ctx: &ToolContext) -> bool {
-        let effective = self.effective_pos(pos, ctx);
-
-        if self.self_intersects {
-            return false;
+        // Edge trace mode: delegate to trace click logic
+        if self.edge_trace_active {
+            return self.edge_trace_click(pos, ctx);
         }
+
+        let effective = self.effective_pos(pos, ctx);
 
         self.anchors.push(BezierAnchor {
             point: effective,
@@ -114,6 +153,12 @@ impl PolygonDrawer {
     pub fn update_cursor(&mut self, pos: Vec2, ctx: &ToolContext) {
         let effective = self.effective_pos(pos, ctx);
         self.current_pos = effective;
+
+        // Edge trace preview
+        if self.edge_trace_active {
+            self.update_edge_trace_preview(pos, ctx);
+            return;
+        }
 
         // In curve mode, detect drag to set handles
         if self.curve_mode {
@@ -138,7 +183,10 @@ impl PolygonDrawer {
                 pos
             };
             let (segments, centers) = self.snap_data(ctx);
-            let candidates = snap::snap_points(constrained, &segments, &centers, ctx.snap_config);
+            let mut candidates = snap::snap_points(constrained, &segments, &centers, ctx.snap_config);
+            if !ctx.smart_points.is_empty() {
+                candidates.extend(super::extension_snap_candidates(constrained, ctx.smart_points));
+            }
             let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
             self.snap = snap::best_snap(&candidates, tolerance);
         } else {
@@ -173,6 +221,19 @@ impl PolygonDrawer {
     pub fn undo_last(&mut self) -> bool {
         self.drag_anchor_pos = None;
         self.dragging_handle = None;
+
+        // If last action was an edge trace, undo all traced vertices at once
+        if let Some(ref mut state) = self.edge_trace {
+            if state.last_insert_count > 0 {
+                let count = state.last_insert_count;
+                for _ in 0..count {
+                    self.anchors.pop();
+                }
+                state.last_insert_count = 0;
+                return !self.anchors.is_empty();
+            }
+        }
+
         self.anchors.pop();
         !self.anchors.is_empty()
     }
@@ -183,6 +244,9 @@ impl PolygonDrawer {
         self.dragging_handle = None;
         self.drag_anchor_pos = None;
         self.self_intersects = false;
+        self.edge_trace_active = false;
+        self.edge_trace = None;
+        self.edge_trace_hover = None;
     }
 
     pub fn toggle_curve_mode(&mut self) {
@@ -230,6 +294,15 @@ impl PolygonDrawer {
     /// Extract plain vertex positions (for non-curve output).
     pub fn to_vertices(&self) -> Vec<Vec2> {
         self.anchors.iter().map(|a| a.point).collect()
+    }
+
+    /// Build a closed BezierPathData from the current anchors.
+    pub fn to_bezier_path_closed(&self) -> BezierPathData {
+        BezierPathData {
+            anchors: self.anchors.clone(),
+            closed: true,
+            holes: Vec::new(),
+        }
     }
 
     /// Draw the preview on the canvas.
@@ -388,10 +461,20 @@ impl PolygonDrawer {
 
         // Mode indicator near cursor
         let cursor_screen = viewport.world_to_screen(self.current_pos);
-        let mode_label = if self.curve_mode { "C" } else { "L" };
+        let mode_label = if self.edge_trace_active {
+            "E"
+        } else if self.curve_mode {
+            "C"
+        } else {
+            "L"
+        };
         let label_pos = egui::pos2(cursor_screen.x + 12.0, cursor_screen.y - 12.0);
         let font = egui::FontId::monospace(10.0);
-        let label_colour = egui::Color32::from_rgba_unmultiplied(200, 200, 200, 180);
+        let label_colour = if self.edge_trace_active {
+            egui::Color32::from_rgb(0, 220, 220)
+        } else {
+            egui::Color32::from_rgba_unmultiplied(200, 200, 200, 180)
+        };
         painter.text(
             label_pos,
             egui::Align2::LEFT_BOTTOM,
@@ -400,9 +483,257 @@ impl PolygonDrawer {
             label_colour,
         );
 
+        // Edge trace visuals
+        self.draw_edge_trace_preview(painter, viewport);
+
         // Snap indicator
         if let Some(ref snap) = self.snap {
             draw_snap_indicator(painter, viewport, snap);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Edge trace methods
+    // -----------------------------------------------------------------------
+
+    /// Toggle edge-trace mode on/off.
+    pub fn toggle_edge_trace(&mut self) {
+        self.edge_trace_active = !self.edge_trace_active;
+        if !self.edge_trace_active {
+            self.edge_trace = None;
+            self.edge_trace_hover = None;
+        }
+    }
+
+    /// Flip trace direction (Tab key). Only meaningful for closed edges.
+    pub fn edge_trace_flip(&mut self) {
+        if let Some(ref mut state) = self.edge_trace {
+            if state.edge_closed {
+                state.reversed = !state.reversed;
+            }
+        }
+    }
+
+    /// Cancel current edge trace. Returns true if something was cancelled.
+    pub fn edge_trace_cancel(&mut self) -> bool {
+        if let Some(ref state) = self.edge_trace {
+            if state.start.is_some() {
+                // Cancel the in-progress trace, keep edge-trace mode active
+                self.edge_trace = None;
+                self.edge_trace_hover = None;
+                return true;
+            }
+        }
+        if self.edge_trace_active {
+            self.edge_trace_active = false;
+            self.edge_trace = None;
+            self.edge_trace_hover = None;
+            return true;
+        }
+        false
+    }
+
+    /// Handle a click in edge-trace mode. Returns true if consumed.
+    fn edge_trace_click(&mut self, pos: Vec2, ctx: &ToolContext) -> bool {
+        let pick_tolerance = 10.0 / ctx.viewport_zoom;
+
+        if let Some(ref mut state) = self.edge_trace {
+            if state.start.is_some() {
+                // Second click: project onto cached edge and extract section
+                let (proj, seg, t) = closest_point_on_polyline(
+                    pos,
+                    &state.edge_vertices,
+                    state.edge_closed,
+                );
+                let start = state.start.as_ref().unwrap();
+                let section = extract_polyline_section(
+                    &state.edge_vertices,
+                    state.edge_closed,
+                    start.segment_idx,
+                    start.t,
+                    seg,
+                    t,
+                    state.reversed,
+                );
+
+                // Insert all section vertices as anchors
+                let count = section.len();
+                for pt in section {
+                    self.anchors.push(BezierAnchor {
+                        point: pt,
+                        handle_in: None,
+                        handle_out: None,
+                    });
+                }
+
+                // Store insert count for batch undo, then clear trace state
+                let reversed = state.reversed;
+                self.edge_trace = Some(EdgeTraceState {
+                    edge_vertices: Vec::new(),
+                    edge_closed: false,
+                    start: None,
+                    preview: Vec::new(),
+                    reversed,
+                    last_insert_count: count,
+                });
+                self.edge_trace_active = false;
+                self.edge_trace_hover = None;
+                return true;
+            }
+        }
+
+        // First click: find nearest visible edge across all entities
+        let mut best_dist = f32::MAX;
+        let mut best_edge: Option<VisibleEdge> = None;
+        let mut best_proj = Vec2::ZERO;
+        let mut best_seg = 0usize;
+        let mut best_t = 0.0f32;
+
+        for entity in ctx.entities {
+            let edges = visible_edges(&entity.geometry, &entity.domain);
+            for edge in edges {
+                if edge.vertices.len() < 2 {
+                    continue;
+                }
+                let (proj, seg, t) =
+                    closest_point_on_polyline(pos, &edge.vertices, edge.closed);
+                let dist = (pos - proj).length();
+                if dist < best_dist && dist < pick_tolerance {
+                    best_dist = dist;
+                    best_proj = proj;
+                    best_seg = seg;
+                    best_t = t;
+                    best_edge = Some(edge);
+                }
+            }
+        }
+
+        if let Some(edge) = best_edge {
+            self.edge_trace = Some(EdgeTraceState {
+                edge_vertices: edge.vertices,
+                edge_closed: edge.closed,
+                start: Some(EdgeTracePoint {
+                    position: best_proj,
+                    segment_idx: best_seg,
+                    t: best_t,
+                }),
+                preview: Vec::new(),
+                reversed: false,
+                last_insert_count: 0,
+            });
+            return true;
+        }
+
+        false
+    }
+
+    /// Update edge-trace hover/preview state during mouse move.
+    fn update_edge_trace_preview(&mut self, pos: Vec2, ctx: &ToolContext) {
+        let pick_tolerance = 10.0 / ctx.viewport_zoom;
+
+        if let Some(ref mut state) = self.edge_trace {
+            if state.start.is_some() {
+                // Project cursor onto cached edge for preview
+                let (_, seg, t) = closest_point_on_polyline(
+                    pos,
+                    &state.edge_vertices,
+                    state.edge_closed,
+                );
+                let start = state.start.as_ref().unwrap();
+                state.preview = extract_polyline_section(
+                    &state.edge_vertices,
+                    state.edge_closed,
+                    start.segment_idx,
+                    start.t,
+                    seg,
+                    t,
+                    state.reversed,
+                );
+                return;
+            }
+        }
+
+        // No start yet: find nearest edge for hover highlight
+        let mut best_dist = f32::MAX;
+        let mut best_verts: Option<(Vec<Vec2>, bool)> = None;
+
+        for entity in ctx.entities {
+            let edges = visible_edges(&entity.geometry, &entity.domain);
+            for edge in edges {
+                if edge.vertices.len() < 2 {
+                    continue;
+                }
+                let (proj, _, _) =
+                    closest_point_on_polyline(pos, &edge.vertices, edge.closed);
+                let dist = (pos - proj).length();
+                if dist < best_dist && dist < pick_tolerance {
+                    best_dist = dist;
+                    best_verts = Some((edge.vertices, edge.closed));
+                }
+            }
+        }
+
+        self.edge_trace_hover = best_verts;
+    }
+
+    /// Draw edge-trace visuals (hover highlight, traced section preview, markers).
+    fn draw_edge_trace_preview(&self, painter: &egui::Painter, viewport: &ViewTransform) {
+        let cyan = egui::Color32::from_rgb(0, 220, 220);
+        let cyan_stroke = egui::Stroke::new(2.0, cyan);
+        let thin_cyan = egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(0, 220, 220, 100));
+
+        // Hover highlight (before first click)
+        if self.edge_trace_active {
+            if let Some(ref state) = self.edge_trace {
+                if state.start.is_some() {
+                    // Draw traced section preview
+                    if state.preview.len() >= 2 {
+                        let screen_pts: Vec<egui::Pos2> = state
+                            .preview
+                            .iter()
+                            .map(|v| viewport.world_to_screen(*v))
+                            .collect();
+                        for w in screen_pts.windows(2) {
+                            painter.line_segment([w[0], w[1]], cyan_stroke);
+                        }
+                    }
+
+                    // Start marker
+                    let start_screen =
+                        viewport.world_to_screen(state.start.as_ref().unwrap().position);
+                    painter.circle_filled(start_screen, 4.0, cyan);
+
+                    // End marker at last preview point
+                    if let Some(last) = state.preview.last() {
+                        let end_screen = viewport.world_to_screen(*last);
+                        painter.circle_filled(end_screen, 4.0, cyan);
+                    }
+
+                    // Tab hint for closed edges
+                    if state.edge_closed {
+                        let cursor_screen = viewport.world_to_screen(self.current_pos);
+                        painter.text(
+                            egui::pos2(cursor_screen.x + 12.0, cursor_screen.y + 4.0),
+                            egui::Align2::LEFT_TOP,
+                            "Tab: flip",
+                            egui::FontId::proportional(9.0),
+                            egui::Color32::from_rgba_unmultiplied(0, 220, 220, 160),
+                        );
+                    }
+                    return;
+                }
+            }
+
+            // Hover: highlight nearest edge
+            if let Some((ref verts, closed)) = self.edge_trace_hover {
+                let n = verts.len();
+                let seg_count = if closed { n } else { n - 1 };
+                for i in 0..seg_count {
+                    let a = viewport.world_to_screen(verts[i]);
+                    let b = viewport.world_to_screen(verts[(i + 1) % n]);
+                    painter.line_segment([a, b], thin_cyan);
+                }
+            }
         }
     }
 }

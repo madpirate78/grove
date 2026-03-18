@@ -88,6 +88,7 @@ pub fn domain_category_colour(domain: &DomainData) -> [u8; 4] {
         DomainData::Fence(_) => [110, 80, 50, 255],       // Dark wood
         DomainData::Pergola(_) => [150, 120, 80, 255],    // Light wood
         DomainData::Decking(_) => [160, 130, 90, 255],    // Timber
+        DomainData::Surface(s) => s.default_colour(),
         DomainData::WaterFeature(_) => [70, 130, 200, 255], // Water blue
         DomainData::House(_) => [139, 115, 85, 255],        // Brownish
         DomainData::SpotHeight(_) => [100, 100, 100, 255],

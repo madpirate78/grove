@@ -28,6 +28,8 @@ pub struct ToolContext<'a> {
     pub active_layer_id: uuid::Uuid,
     pub viewport_zoom: f32,
     pub selected_ids: &'a [uuid::Uuid],
+    /// Activated smart snap points for extension line snapping.
+    pub smart_points: &'a [Vec2],
 }
 
 /// What a tool returns after handling input.
@@ -154,11 +156,12 @@ pub fn collect_snap_centers(geom: &Geometry, centers: &mut Vec<CenterPoint>) {
     }
 }
 
-/// Gather all snap candidates from existing entities and grid.
+/// Gather all snap candidates from existing entities, grid, and smart extension lines.
 pub fn snap_candidates_from_entities(
     cursor: Vec2,
     entities: &[Entity],
     config: &grove_core::snap::SnapConfig,
+    smart_points: &[Vec2],
 ) -> Vec<SnapResult> {
     let mut segs = Vec::new();
     let mut centers = Vec::new();
@@ -166,7 +169,57 @@ pub fn snap_candidates_from_entities(
         collect_snap_segments(&entity.geometry, &mut segs);
         collect_snap_centers(&entity.geometry, &mut centers);
     }
-    grove_core::snap::snap_points(cursor, &segs, &centers, config)
+    let mut results = grove_core::snap::snap_points(cursor, &segs, &centers, config);
+    if !smart_points.is_empty() {
+        results.extend(extension_snap_candidates(cursor, smart_points));
+    }
+    results
+}
+
+/// Generate extension snap candidates from smart points.
+/// Projects cursor onto H/V lines through each smart point and computes
+/// H×V intersections between different smart points.
+pub fn extension_snap_candidates(cursor: Vec2, smart_points: &[Vec2]) -> Vec<SnapResult> {
+    use grove_core::snap::{SnapResult, SnapType};
+    let mut results = Vec::new();
+    for &sp in smart_points {
+        // Horizontal projection (same Y as smart point)
+        let h_proj = Vec2::new(cursor.x, sp.y);
+        results.push(SnapResult {
+            position: h_proj,
+            snap_type: SnapType::Extension,
+            distance: (cursor - h_proj).length(),
+        });
+        // Vertical projection (same X as smart point)
+        let v_proj = Vec2::new(sp.x, cursor.y);
+        results.push(SnapResult {
+            position: v_proj,
+            snap_type: SnapType::Extension,
+            distance: (cursor - v_proj).length(),
+        });
+    }
+    // H×V intersections between different smart points
+    for i in 0..smart_points.len() {
+        for j in (i + 1)..smart_points.len() {
+            let a = smart_points[i];
+            let b = smart_points[j];
+            // Intersection: H from a, V from b → (b.x, a.y)
+            let p1 = Vec2::new(b.x, a.y);
+            results.push(SnapResult {
+                position: p1,
+                snap_type: SnapType::Extension,
+                distance: (cursor - p1).length(),
+            });
+            // Intersection: V from a, H from b → (a.x, b.y)
+            let p2 = Vec2::new(a.x, b.y);
+            results.push(SnapResult {
+                position: p2,
+                snap_type: SnapType::Extension,
+                distance: (cursor - p2).length(),
+            });
+        }
+    }
+    results
 }
 
 /// Apply ortho constraint: snap to horizontal or vertical from anchor.

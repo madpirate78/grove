@@ -51,12 +51,11 @@ impl LayerManager {
             ("GD_HARDSCAPE_STEPS", [160, 147, 125, 255], 3),
             ("GD_HARDSCAPE_STRUCTURES", [160, 82, 45, 255], 4),
             ("GD_HARDSCAPE_WATER", [59, 125, 216, 255], 5),
-            ("GD_HARDSCAPE_EDGING", [107, 97, 88, 255], 6),
-            ("GD_LEVELS", [229, 57, 53, 255], 7),
-            ("GD_DRAINAGE", [27, 94, 32, 255], 8),
-            ("GD_BOUNDARY", [158, 158, 158, 255], 9),
-            ("GD_BUILDINGS", [117, 117, 117, 255], 10),
-            ("GD_SURVEY", [189, 189, 189, 255], 11),
+            ("GD_LEVELS", [229, 57, 53, 255], 6),
+            ("GD_DRAINAGE", [27, 94, 32, 255], 7),
+            ("GD_BOUNDARY", [158, 158, 158, 255], 8),
+            ("GD_BUILDINGS", [117, 117, 117, 255], 9),
+            ("GD_SURVEY", [189, 189, 189, 255], 10),
         ];
         defs.into_iter()
             .map(|(name, colour, order)| {
@@ -119,7 +118,7 @@ mod tests {
     #[test]
     fn test_default_layers_created() {
         let lm = LayerManager::new();
-        assert_eq!(lm.layers.len(), 12);
+        assert_eq!(lm.layers.len(), 11);
         assert!(lm.find_by_name("GD_PLANTING").is_some());
         assert!(lm.find_by_name("GD_DRAINAGE").is_some());
     }
@@ -130,9 +129,9 @@ mod tests {
         let custom = Layer::new("MY_LAYER", [255, 0, 0, 255]);
         let id = custom.id;
         lm.add_layer(custom);
-        assert_eq!(lm.layers.len(), 13);
+        assert_eq!(lm.layers.len(), 12);
         assert!(lm.find_by_id(id).is_some());
         lm.remove_layer(id);
-        assert_eq!(lm.layers.len(), 12);
+        assert_eq!(lm.layers.len(), 11);
     }
 }

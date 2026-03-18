@@ -41,7 +41,10 @@ impl DrawTextTool {
                 collect_snap_segments(&entity.geometry, &mut segs);
                 collect_snap_centers(&entity.geometry, &mut centers);
             }
-            let candidates = snap::snap_points(raw, &segs, &centers, ctx.snap_config);
+            let mut candidates = snap::snap_points(raw, &segs, &centers, ctx.snap_config);
+            if !ctx.smart_points.is_empty() {
+                candidates.extend(super::extension_snap_candidates(raw, ctx.smart_points));
+            }
             let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
             if let Some(result) = snap::best_snap(&candidates, tolerance) {
                 return result.position;
@@ -107,7 +110,10 @@ impl Tool for DrawTextTool {
                     collect_snap_segments(&entity.geometry, &mut segs);
                     collect_snap_centers(&entity.geometry, &mut centers);
                 }
-                let candidates = snap::snap_points(pos, &segs, &centers, ctx.snap_config);
+                let mut candidates = snap::snap_points(pos, &segs, &centers, ctx.snap_config);
+                if !ctx.smart_points.is_empty() {
+                    candidates.extend(super::extension_snap_candidates(pos, ctx.smart_points));
+                }
                 let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
                 self.snap = snap::best_snap(&candidates, tolerance);
             } else {

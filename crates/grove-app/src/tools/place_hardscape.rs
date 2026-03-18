@@ -15,94 +15,93 @@ use super::{collect_snap_centers, collect_snap_segments, ortho_constrain, Tool, 
 use crate::view::viewport::ViewTransform;
 
 // ---------------------------------------------------------------------------
-// Sub-type enum
+// Category / sub-kind enums
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HardscapeSubType {
-    Wall,
-    Path,
-    Patio,
-    Step,
-    Edging,
-    RaisedBed,
-    Fence,
-    Pergola,
-    Decking,
-    WaterFeature,
-    House,
+pub enum HardscapeCategory {
+    Walls,
+    Surfaces,
+    Steps,
+    Structures,
+    Water,
+    Buildings,
 }
 
-impl HardscapeSubType {
+impl HardscapeCategory {
     pub const ALL: &'static [Self] = &[
-        Self::Wall,
-        Self::Path,
-        Self::Patio,
-        Self::Step,
-        Self::Edging,
-        Self::RaisedBed,
-        Self::Fence,
-        Self::Pergola,
-        Self::Decking,
-        Self::WaterFeature,
-        Self::House,
+        Self::Walls,
+        Self::Surfaces,
+        Self::Steps,
+        Self::Structures,
+        Self::Water,
+        Self::Buildings,
     ];
 
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Wall => "Wall",
-            Self::Path => "Path",
-            Self::Patio => "Patio",
-            Self::Step => "Step",
-            Self::Edging => "Edging",
-            Self::RaisedBed => "Raised Bed",
-            Self::Fence => "Fence",
-            Self::Pergola => "Pergola",
-            Self::Decking => "Decking",
-            Self::WaterFeature => "Water Feature",
-            Self::House => "House",
+            Self::Walls => "Walls",
+            Self::Surfaces => "Surfaces",
+            Self::Steps => "Steps",
+            Self::Structures => "Structures",
+            Self::Water => "Water",
+            Self::Buildings => "Buildings",
         }
-    }
-
-    pub fn drawing_mode(&self) -> DrawingMode {
-        match self {
-            Self::Wall | Self::Path | Self::Step | Self::Edging | Self::Fence => DrawingMode::Polyline,
-            Self::Patio | Self::RaisedBed | Self::Decking => DrawingMode::Polygon,
-            Self::Pergola | Self::House => DrawingMode::Rectangle,
-            Self::WaterFeature => DrawingMode::PointOrPolygon,
-        }
-    }
-
-    /// Whether this sub-type is an area (polygon) type that supports shape overrides.
-    pub fn is_area_type(&self) -> bool {
-        matches!(self.drawing_mode(), DrawingMode::Polygon | DrawingMode::PointOrPolygon)
     }
 
     pub fn target_layer_name(&self) -> &'static str {
         match self {
-            Self::Wall | Self::RaisedBed => "GD_HARDSCAPE_WALLS",
-            Self::Path | Self::Patio | Self::Decking => "GD_HARDSCAPE_SURFACES",
-            Self::Step => "GD_HARDSCAPE_STEPS",
-            Self::Edging => "GD_HARDSCAPE_EDGING",
-            Self::Fence | Self::Pergola => "GD_HARDSCAPE_STRUCTURES",
-            Self::WaterFeature => "GD_HARDSCAPE_WATER",
-            Self::House => "GD_BUILDINGS",
+            Self::Walls => "GD_HARDSCAPE_WALLS",
+            Self::Surfaces => "GD_HARDSCAPE_SURFACES",
+            Self::Steps => "GD_HARDSCAPE_STEPS",
+            Self::Structures => "GD_HARDSCAPE_STRUCTURES",
+            Self::Water => "GD_HARDSCAPE_WATER",
+            Self::Buildings => "GD_BUILDINGS",
         }
     }
 
     pub fn default_colour(&self) -> [u8; 4] {
         match self {
-            Self::Wall => parse_hex_colour("#8B7D6B"),
-            Self::Path => parse_hex_colour("#C4B8A8"),
-            Self::Patio => parse_hex_colour("#C4B8A8"),
-            Self::Step => parse_hex_colour("#A0937D"),
-            Self::Edging => parse_hex_colour("#6B6158"),
-            Self::RaisedBed => parse_hex_colour("#8B7D6B"),
-            Self::Fence => parse_hex_colour("#A0522D"),
-            Self::Pergola => parse_hex_colour("#A0522D"),
-            Self::Decking => parse_hex_colour("#C19A6B"),
-            Self::WaterFeature => parse_hex_colour("#3B7DD8"),
-            Self::House => parse_hex_colour("#8B7355"),
+            Self::Walls => parse_hex_colour("#8B7D6B"),
+            Self::Surfaces => parse_hex_colour("#C4B8A8"),
+            Self::Steps => parse_hex_colour("#A0937D"),
+            Self::Structures => parse_hex_colour("#A0522D"),
+            Self::Water => parse_hex_colour("#3B7DD8"),
+            Self::Buildings => parse_hex_colour("#8B7355"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WallKind {
+    Wall,
+    Edging,
+}
+
+impl WallKind {
+    pub const ALL: &'static [Self] = &[Self::Wall, Self::Edging];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Wall => "Wall",
+            Self::Edging => "Edging",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StructureKind {
+    Fence,
+    Pergola,
+}
+
+impl StructureKind {
+    pub const ALL: &'static [Self] = &[Self::Fence, Self::Pergola];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Fence => "Fence",
+            Self::Pergola => "Pergola",
         }
     }
 }
@@ -117,15 +116,11 @@ pub enum DrawingMode {
     PointOrPolygon,
 }
 
-/// Shape override for area hardscape types (Patio, Decking, RaisedBed).
-/// Allows switching between polygon, circle, and rectangle drawing sub-modes.
+/// Shape override for area types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShapeOverride {
-    /// Polygon drawer (polyline with curve mode) — the default for area types.
     Line,
-    /// Circle: click center, click edge.
     Circle,
-    /// Rectangle: click corner, click opposite corner.
     Rectangle,
 }
 
@@ -142,27 +137,24 @@ fn parse_hex_colour(hex: &str) -> [u8; 4] {
 // ---------------------------------------------------------------------------
 
 pub struct PlaceHardscapeTool {
-    pub sub_type: HardscapeSubType,
-    /// Shape override for area types (None = use sub_type default).
+    pub category: HardscapeCategory,
+    pub wall_kind: WallKind,
+    pub structure_kind: StructureKind,
+    /// Shape override for area types (None = use category default).
     pub shape_override: Option<ShapeOverride>,
     // Domain defaults
     pub wall: WallData,
-    pub path: PathData,
-    pub patio: PatioData,
-    pub step: StepData,
     pub edging: EdgingData,
-    pub raised_bed: RaisedBedData,
+    pub surface: SurfaceData,
+    pub step: StepData,
     pub fence: FenceData,
     pub pergola: PergolaData,
-    pub decking: DeckingData,
     pub water_feature: WaterFeatureData,
     pub house: HouseData,
-    // Drawing state — shared drawer for polygon/polyline modes
+    // Drawing state
     drawer: PolygonDrawer,
-    // Rectangle mode state (not using drawer)
     current_pos: Vec2,
     first_corner: Option<Vec2>,
-    // Circle mode state
     circle_center: Option<Vec2>,
     snap: Option<SnapResult>,
     pub layer_id: uuid::Uuid,
@@ -171,20 +163,19 @@ pub struct PlaceHardscapeTool {
 impl PlaceHardscapeTool {
     pub fn new() -> Self {
         Self {
-            sub_type: HardscapeSubType::Wall,
+            category: HardscapeCategory::Walls,
+            wall_kind: WallKind::Wall,
+            structure_kind: StructureKind::Fence,
             shape_override: None,
             wall: WallData::default(),
-            path: PathData::default(),
-            patio: PatioData::default(),
-            step: StepData::default(),
             edging: EdgingData::default(),
-            raised_bed: RaisedBedData::default(),
+            surface: SurfaceData::default(),
+            step: StepData::default(),
             fence: FenceData::default(),
             pergola: PergolaData::default(),
-            decking: DeckingData::default(),
             water_feature: WaterFeatureData::default(),
             house: HouseData::default(),
-            drawer: PolygonDrawer::new(true), // default polygon (closing) mode
+            drawer: PolygonDrawer::new(true),
             current_pos: Vec2::ZERO,
             first_corner: None,
             circle_center: None,
@@ -194,11 +185,33 @@ impl PlaceHardscapeTool {
     }
 
     pub fn target_layer_name(&self) -> &str {
-        self.sub_type.target_layer_name()
+        self.category.target_layer_name()
+    }
+
+    fn base_drawing_mode(&self) -> DrawingMode {
+        match self.category {
+            HardscapeCategory::Walls => DrawingMode::Polyline,
+            HardscapeCategory::Surfaces => {
+                if self.surface.width_mm.is_some() {
+                    DrawingMode::Polyline
+                } else {
+                    DrawingMode::Polygon
+                }
+            }
+            HardscapeCategory::Steps => DrawingMode::Polyline,
+            HardscapeCategory::Structures => {
+                match self.structure_kind {
+                    StructureKind::Fence => DrawingMode::Polyline,
+                    StructureKind::Pergola => DrawingMode::Rectangle,
+                }
+            }
+            HardscapeCategory::Water => DrawingMode::PointOrPolygon,
+            HardscapeCategory::Buildings => DrawingMode::Polygon,
+        }
     }
 
     fn effective_mode(&self) -> DrawingMode {
-        let base = match self.sub_type.drawing_mode() {
+        let base = match self.base_drawing_mode() {
             DrawingMode::PointOrPolygon => {
                 match self.water_feature.feature_type {
                     WaterFeatureType::Pond | WaterFeatureType::Rill | WaterFeatureType::Stream => {
@@ -210,7 +223,6 @@ impl PlaceHardscapeTool {
             other => other,
         };
 
-        // Apply shape override for area types
         if let Some(ovr) = self.shape_override {
             if base == DrawingMode::Polygon {
                 return match ovr {
@@ -223,14 +235,17 @@ impl PlaceHardscapeTool {
         base
     }
 
-    /// Clear drawing-in-progress state (used when switching shape override).
+    /// Whether the current config produces an area (polygon) type.
+    pub fn is_area_type(&self) -> bool {
+        matches!(self.base_drawing_mode(), DrawingMode::Polygon | DrawingMode::PointOrPolygon)
+    }
+
     pub fn reset_drawing_state(&mut self) {
         self.drawer.clear();
         self.first_corner = None;
         self.circle_center = None;
     }
 
-    /// Update the drawer's closing mode based on the current drawing mode.
     fn sync_drawer_mode(&mut self) {
         let mode = self.effective_mode();
         self.drawer.set_closing_mode(mode == DrawingMode::Polygon);
@@ -244,7 +259,10 @@ impl PlaceHardscapeTool {
         };
         if ctx.snap_config.enabled {
             let (segs, centers) = self.snap_data_rect(ctx);
-            let candidates = snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
+            let mut candidates = snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
+            if !ctx.smart_points.is_empty() {
+                candidates.extend(super::extension_snap_candidates(constrained, ctx.smart_points));
+            }
             let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
             if let Some(result) = snap::best_snap(&candidates, tolerance) {
                 return result.position;
@@ -264,17 +282,35 @@ impl PlaceHardscapeTool {
     }
 
     fn colour(&self) -> [u8; 4] {
-        self.sub_type.default_colour()
+        match self.category {
+            HardscapeCategory::Surfaces => self.surface.default_colour(),
+            _ => self.category.default_colour(),
+        }
     }
 
-    /// Width in mm for the current sub-type, if applicable.
     fn current_width_mm(&self) -> Option<f32> {
-        match self.sub_type {
-            HardscapeSubType::Wall => Some(self.wall.width_mm as f32),
-            HardscapeSubType::Path => Some(self.path.width_mm as f32),
-            HardscapeSubType::Step => Some(self.step.width_mm as f32),
-            HardscapeSubType::Edging => Some(self.edging.width_mm as f32),
+        match self.category {
+            HardscapeCategory::Walls => {
+                match self.wall_kind {
+                    WallKind::Wall => Some(self.wall.width_mm as f32),
+                    WallKind::Edging => Some(self.edging.width_mm as f32),
+                }
+            }
+            HardscapeCategory::Surfaces => self.surface.width_mm.map(|w| w as f32),
+            HardscapeCategory::Steps => Some(self.step.width_mm as f32),
             _ => None,
+        }
+    }
+
+    /// Entity display name for the current selection.
+    fn entity_name(&self) -> &str {
+        match self.category {
+            HardscapeCategory::Walls => self.wall_kind.label(),
+            HardscapeCategory::Surfaces => self.surface.label.label(),
+            HardscapeCategory::Steps => "Step",
+            HardscapeCategory::Structures => self.structure_kind.label(),
+            HardscapeCategory::Water => "Water Feature",
+            HardscapeCategory::Buildings => "House",
         }
     }
 
@@ -338,7 +374,7 @@ impl PlaceHardscapeTool {
                 if radius < 1.0 {
                     return None;
                 }
-                if self.sub_type.is_area_type() {
+                if self.is_area_type() {
                     let vertices = circle_to_polygon(center, radius, 48);
                     Geometry::Polygon(PolygonData { vertices, holes: Vec::new() })
                 } else {
@@ -353,7 +389,7 @@ impl PlaceHardscapeTool {
                 if half_size.x < 1.0 || half_size.y < 1.0 {
                     return None;
                 }
-                if self.sub_type.is_area_type() {
+                if self.is_area_type() {
                     let vertices = rect_to_polygon(center, half_size);
                     Geometry::Polygon(PolygonData { vertices, holes: Vec::new() })
                 } else {
@@ -372,21 +408,26 @@ impl PlaceHardscapeTool {
             }
         };
 
-        let domain = match self.sub_type {
-            HardscapeSubType::Wall => DomainData::Wall(self.wall.clone()),
-            HardscapeSubType::Path => DomainData::Path(self.path.clone()),
-            HardscapeSubType::Patio => DomainData::Patio(self.patio.clone()),
-            HardscapeSubType::Step => DomainData::Step(self.step.clone()),
-            HardscapeSubType::Edging => DomainData::Edging(self.edging.clone()),
-            HardscapeSubType::RaisedBed => DomainData::RaisedBed(self.raised_bed.clone()),
-            HardscapeSubType::Fence => DomainData::Fence(self.fence.clone()),
-            HardscapeSubType::Pergola => DomainData::Pergola(self.pergola.clone()),
-            HardscapeSubType::Decking => DomainData::Decking(self.decking.clone()),
-            HardscapeSubType::WaterFeature => DomainData::WaterFeature(self.water_feature.clone()),
-            HardscapeSubType::House => DomainData::House(self.house.clone()),
+        let domain = match self.category {
+            HardscapeCategory::Walls => {
+                match self.wall_kind {
+                    WallKind::Wall => DomainData::Wall(self.wall.clone()),
+                    WallKind::Edging => DomainData::Edging(self.edging.clone()),
+                }
+            }
+            HardscapeCategory::Surfaces => DomainData::Surface(self.surface.clone()),
+            HardscapeCategory::Steps => DomainData::Step(self.step.clone()),
+            HardscapeCategory::Structures => {
+                match self.structure_kind {
+                    StructureKind::Fence => DomainData::Fence(self.fence.clone()),
+                    StructureKind::Pergola => DomainData::Pergola(self.pergola.clone()),
+                }
+            }
+            HardscapeCategory::Water => DomainData::WaterFeature(self.water_feature.clone()),
+            HardscapeCategory::Buildings => DomainData::House(self.house.clone()),
         };
 
-        let mut entity = Entity::new(self.sub_type.label(), geom, domain);
+        let mut entity = Entity::new(self.entity_name(), geom, domain);
         entity.layer_id = self.layer_id;
         entity.colour = self.colour();
         Some(entity)
@@ -470,7 +511,10 @@ impl Tool for PlaceHardscapeTool {
                         pos
                     };
                     let (segments, centers) = self.snap_data_rect(ctx);
-                    let candidates = snap::snap_points(constrained, &segments, &centers, ctx.snap_config);
+                    let mut candidates = snap::snap_points(constrained, &segments, &centers, ctx.snap_config);
+                    if !ctx.smart_points.is_empty() {
+                        candidates.extend(super::extension_snap_candidates(constrained, ctx.smart_points));
+                    }
                     let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
                     self.snap = snap::best_snap(&candidates, tolerance);
                 } else {
@@ -492,8 +536,11 @@ impl Tool for PlaceHardscapeTool {
     }
 
     fn on_key_pressed(&mut self, key: egui::Key) -> ToolResult {
-        if key == egui::Key::C {
-            self.drawer.toggle_curve_mode();
+        match key {
+            egui::Key::C => self.drawer.toggle_curve_mode(),
+            egui::Key::E => self.drawer.toggle_edge_trace(),
+            egui::Key::Tab => self.drawer.edge_trace_flip(),
+            _ => {}
         }
         ToolResult::Continue
     }
@@ -503,6 +550,9 @@ impl Tool for PlaceHardscapeTool {
     }
 
     fn on_key_escape(&mut self) -> ToolResult {
+        if self.drawer.edge_trace_cancel() {
+            return ToolResult::Continue;
+        }
         if self.drawer.anchors.is_empty() && self.first_corner.is_none() && self.circle_center.is_none() {
             ToolResult::Finished
         } else {
@@ -520,7 +570,6 @@ impl Tool for PlaceHardscapeTool {
                 self.drawer.drag_anchor_pos = None;
                 self.drawer.dragging_handle = None;
 
-                // Remove duplicate trailing anchor from the double-click's mouse_down
                 if self.drawer.anchors.len() >= 2 {
                     let last = self.drawer.anchors[self.drawer.anchors.len() - 1].point;
                     let prev = self.drawer.anchors[self.drawer.anchors.len() - 2].point;
@@ -529,7 +578,6 @@ impl Tool for PlaceHardscapeTool {
                     }
                 }
 
-                // Check close-on-first for polygon mode
                 if mode == DrawingMode::Polygon {
                     let tolerance = 8.0 / ctx.viewport_zoom;
                     let _ = pos;
@@ -591,7 +639,6 @@ impl Tool for PlaceHardscapeTool {
                     painter.circle_filled(screen_center, screen_radius, fill_colour);
                     painter.circle_stroke(screen_center, screen_radius, preview_stroke);
 
-                    // Radius line
                     painter.line_segment(
                         [screen_center, screen_edge],
                         egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(col[0], col[1], col[2], 80)),
@@ -625,7 +672,7 @@ impl Tool for PlaceHardscapeTool {
                 painter.text(
                     egui::pos2(screen.x, screen.y + 10.0),
                     egui::Align2::CENTER_TOP,
-                    self.sub_type.label(),
+                    self.entity_name(),
                     egui::FontId::proportional(10.0),
                     egui::Color32::from_rgba_unmultiplied(200, 200, 205, 160),
                 );
@@ -633,7 +680,6 @@ impl Tool for PlaceHardscapeTool {
             DrawingMode::Polyline | DrawingMode::Polygon => {
                 let is_polygon = mode == DrawingMode::Polygon;
 
-                // Width preview for polyline types with domain width
                 if mode == DrawingMode::Polyline && !self.drawer.anchors.is_empty() {
                     if let Some(w) = self.current_width_mm() {
                         let mut preview_verts = self.drawer.to_vertices();
@@ -661,7 +707,6 @@ impl Tool for PlaceHardscapeTool {
             }
         }
 
-        // Snap indicator (for rectangle/point modes that don't use the drawer)
         let snap_ref = match mode {
             DrawingMode::Polyline | DrawingMode::Polygon => self.drawer.snap.as_ref(),
             _ => self.snap.as_ref(),

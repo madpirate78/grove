@@ -550,6 +550,7 @@ pub enum DomainData {
     Fence(FenceData),
     Pergola(PergolaData),
     Decking(DeckingData),
+    Surface(SurfaceData),
     WaterFeature(WaterFeatureData),
     SpotHeight(SpotHeightData),
     Contour(ContourData),
@@ -569,6 +570,7 @@ impl DomainData {
             Self::Path(p) => Some(p.width_mm as f32),
             Self::Step(s) => Some(s.width_mm as f32),
             Self::Edging(e) => Some(e.width_mm as f32),
+            Self::Surface(s) => s.width_mm.map(|w| w as f32),
             Self::House(h) => Some(h.wall_thickness_mm as f32),
             _ => None,
         }

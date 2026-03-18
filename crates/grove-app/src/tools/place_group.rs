@@ -115,7 +115,7 @@ impl PlaceGroupTool {
 
     fn snapped_pos(&self, raw: Vec2, ctx: &ToolContext) -> Vec2 {
         if ctx.snap_config.enabled {
-            let candidates = snap_candidates_from_entities(raw, ctx.entities, ctx.snap_config);
+            let candidates = snap_candidates_from_entities(raw, ctx.entities, ctx.snap_config, ctx.smart_points);
             let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
             if let Some(result) = snap::best_snap(&candidates, tolerance) {
                 return result.position;
@@ -254,7 +254,7 @@ impl Tool for PlaceGroupTool {
         self.current_pos = self.snapped_pos(pos, ctx);
 
         if ctx.snap_config.enabled && self.state == GroupState::DrawingBoundary {
-            let candidates = snap_candidates_from_entities(pos, ctx.entities, ctx.snap_config);
+            let candidates = snap_candidates_from_entities(pos, ctx.entities, ctx.snap_config, ctx.smart_points);
             let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
             self.snap = snap::best_snap(&candidates, tolerance);
         } else {

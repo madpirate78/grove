@@ -132,26 +132,33 @@ impl ShapeTool {
     }
 }
 
-/// Returns the available shape sub-tools for a given mode and sub-type context.
+/// Returns the available shape sub-tools for a given mode and hardscape/level context.
 pub fn available_shapes(
     mode: ToolMode,
-    hardscape_sub_type: Option<crate::tools::place_hardscape::HardscapeSubType>,
+    hardscape_tool: Option<&crate::tools::place_hardscape::PlaceHardscapeTool>,
     level_sub_type: Option<crate::tools::place_level::LevelSubType>,
 ) -> &'static [ShapeTool] {
-    use crate::tools::place_hardscape::HardscapeSubType;
+    use crate::tools::place_hardscape::{HardscapeCategory, StructureKind};
     use crate::tools::place_level::LevelSubType;
 
     match mode {
         ToolMode::Shape => &[ShapeTool::Line, ShapeTool::Arc, ShapeTool::Circle, ShapeTool::Rect, ShapeTool::Text, ShapeTool::Dim],
         ToolMode::Hardscape => {
-            match hardscape_sub_type {
-                Some(HardscapeSubType::Wall | HardscapeSubType::Path | HardscapeSubType::Step | HardscapeSubType::Edging | HardscapeSubType::Fence) => {
+            match hardscape_tool.map(|ht| (ht.category, ht.structure_kind, ht.surface.width_mm.is_some())) {
+                Some((HardscapeCategory::Walls | HardscapeCategory::Steps, _, _)) => {
                     &[ShapeTool::Line]
                 }
-                Some(HardscapeSubType::Pergola | HardscapeSubType::House) => {
+                Some((HardscapeCategory::Structures, StructureKind::Fence, _)) => {
+                    &[ShapeTool::Line]
+                }
+                Some((HardscapeCategory::Structures, StructureKind::Pergola, _)) => {
                     &[ShapeTool::Rect]
                 }
-                Some(HardscapeSubType::Patio | HardscapeSubType::RaisedBed | HardscapeSubType::Decking | HardscapeSubType::WaterFeature) => {
+                Some((HardscapeCategory::Surfaces, _, true)) => {
+                    // Path mode (has width) — polyline only
+                    &[ShapeTool::Line]
+                }
+                Some((HardscapeCategory::Surfaces | HardscapeCategory::Water | HardscapeCategory::Buildings, _, _)) => {
                     &[ShapeTool::Line, ShapeTool::Circle, ShapeTool::Rect]
                 }
                 None => &[ShapeTool::Line, ShapeTool::Circle, ShapeTool::Rect],
@@ -194,6 +201,17 @@ struct CalibrateState {
 }
 
 /// The main Grove application state.
+/// An activated smart snap point that projects extension lines.
+struct SmartPoint {
+    position: glam::Vec2,
+}
+
+/// Tracks the current hover over a snap point for dwell detection.
+struct SmartPointHover {
+    position: glam::Vec2,
+    started: std::time::Instant,
+}
+
 pub struct GroveApp {
     pub project: Project,
     pub canvas: Canvas,
@@ -236,6 +254,11 @@ pub struct GroveApp {
 
     /// Internal clipboard for copy/paste.
     clipboard: Vec<grove_core::entity::Entity>,
+
+    /// Activated smart snap points that project H/V extension lines.
+    smart_points: Vec<SmartPoint>,
+    /// Current dwell hover tracking for smart point activation.
+    smart_hover: Option<SmartPointHover>,
 
     /// Current workspace mode: Model or Drawing.
     pub workspace_mode: WorkspaceMode,
@@ -302,6 +325,8 @@ impl GroveApp {
             calibrate_second_point: None,
             anchor_point: Some(glam::Vec2::ZERO),
             clipboard: Vec::new(),
+            smart_points: Vec::new(),
+            smart_hover: None,
             workspace_mode: WorkspaceMode::Model,
             drawing_interaction: crate::view::drawing_view::DrawingInteraction::default(),
             drawing_viewport: crate::view::viewport::ViewTransform::with_zoom_limits(0.5, 10.0),
@@ -313,6 +338,8 @@ impl GroveApp {
         self.active_tool_type = tool_type;
         self.bezier_edit = None;
         self.box_select_start = None;
+        self.smart_points.clear();
+        self.smart_hover = None;
         // Sync tool_mode and shape_sub_tool from active_tool_type
         self.tool_mode = match tool_type {
             ActiveToolType::Select => ToolMode::Select,
@@ -1530,17 +1557,16 @@ impl eframe::App for GroveApp {
             .resizable(false)
             .show(ctx, |ui| {
                 // Gather context for column 2 before entering closure
-                let hardscape_sub_type = self.draw_tool.as_ref().and_then(|t| {
+                let hardscape_tool_ref = self.draw_tool.as_ref().and_then(|t| {
                     t.as_any_ref()
                         .downcast_ref::<crate::tools::place_hardscape::PlaceHardscapeTool>()
-                        .map(|ht| ht.sub_type)
                 });
                 let level_sub_type = self.draw_tool.as_ref().and_then(|t| {
                     t.as_any_ref()
                         .downcast_ref::<crate::tools::place_level::PlaceLevelTool>()
                         .map(|lt| lt.sub_type)
                 });
-                let shapes = available_shapes(self.tool_mode, hardscape_sub_type, level_sub_type);
+                let shapes = available_shapes(self.tool_mode, hardscape_tool_ref, level_sub_type);
 
                 let blue = Color32::from_rgb(60, 90, 140);
                 let green = Color32::from_rgb(50, 120, 60);
@@ -1571,6 +1597,7 @@ impl eframe::App for GroveApp {
                 let mut mode_action: Option<ToolMode> = None;
                 let mut delete_action = false;
                 let mut shape_action: Option<ShapeTool> = None;
+                let has_sel = !self.selection.is_empty();
 
                 grove_widgets::toolbar::toolbar_two_column(ui,
                     // ─── Column 1: Mode buttons ───
@@ -1580,15 +1607,15 @@ impl eframe::App for GroveApp {
                             mode_action = Some(ToolMode::Select);
                         }
                         // Move
-                        if grove_widgets::toolbar::tool_button(ui, "Move", self.tool_mode == ToolMode::Move).clicked() {
+                        if grove_widgets::toolbar::tool_button_enabled(ui, "Move", self.tool_mode == ToolMode::Move, None, has_sel).clicked() {
                             mode_action = Some(ToolMode::Move);
                         }
                         // Rotate
-                        if grove_widgets::toolbar::tool_button(ui, "Rotate", self.tool_mode == ToolMode::Rotate).clicked() {
+                        if grove_widgets::toolbar::tool_button_enabled(ui, "Rotate", self.tool_mode == ToolMode::Rotate, None, has_sel).clicked() {
                             mode_action = Some(ToolMode::Rotate);
                         }
                         // Delete (action button, not a mode)
-                        if grove_widgets::toolbar::tool_button(ui, "Delete", false).clicked() {
+                        if grove_widgets::toolbar::tool_button_enabled(ui, "Delete", false, None, has_sel).clicked() {
                             delete_action = true;
                         }
 
@@ -1618,7 +1645,7 @@ impl eframe::App for GroveApp {
                         grove_widgets::toolbar::tool_separator(ui);
 
                         // Cutout
-                        if grove_widgets::toolbar::tool_button_colored(ui, "Cutout", self.tool_mode == ToolMode::Cutout, Some(red)).clicked() {
+                        if grove_widgets::toolbar::tool_button_enabled(ui, "Cutout", self.tool_mode == ToolMode::Cutout, Some(red), has_sel).clicked() {
                             mode_action = Some(ToolMode::Cutout);
                         }
                     },
@@ -2283,7 +2310,7 @@ impl eframe::App for GroveApp {
                     if scroll_delta.abs() > 0.0 {
                         if let Some(pointer) = ui.input(|i| i.pointer.hover_pos()) {
                             if rect.contains(pointer) {
-                                let factor = if scroll_delta > 0.0 { 1.1 } else { 1.0 / 1.1 };
+                                let factor = if scroll_delta > 0.0 { 1.05 } else { 1.0 / 1.05 };
                                 self.drawing_viewport.zoom_at(pointer, factor);
                             }
                         }
@@ -2580,8 +2607,110 @@ impl eframe::App for GroveApp {
                     return;
                 }
 
+                // --- Smart snap point dwell detection (runs for all tool modes) ---
+                if self.snap_config.enabled {
+                    let snap_tolerance = self.snap_config.snap_distance / self.canvas.viewport.zoom;
+                    let candidates = crate::tools::snap_candidates_from_entities(
+                        pos, &self.project.entities, &self.snap_config, &[],
+                    );
+                    let non_grid_snap = candidates.iter()
+                        .filter(|s| !matches!(s.snap_type, grove_core::snap::SnapType::Grid))
+                        .filter(|s| s.distance <= snap_tolerance)
+                        .min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal))
+                        .copied();
+
+                    if let Some(snap) = non_grid_snap {
+                        let near_threshold = 1.0; // 1mm
+                        if let Some(ref hover) = self.smart_hover {
+                            if (snap.position - hover.position).length() < near_threshold {
+                                if hover.started.elapsed() >= std::time::Duration::from_millis(1500) {
+                                    let already_exists = self.smart_points.iter()
+                                        .any(|sp| (sp.position - snap.position).length() < near_threshold);
+                                    if !already_exists && self.smart_points.len() < 5 {
+                                        self.smart_points.push(SmartPoint { position: snap.position });
+                                    }
+                                    self.smart_hover = None;
+                                }
+                            } else {
+                                self.smart_hover = Some(SmartPointHover {
+                                    position: snap.position,
+                                    started: std::time::Instant::now(),
+                                });
+                            }
+                        } else {
+                            self.smart_hover = Some(SmartPointHover {
+                                position: snap.position,
+                                started: std::time::Instant::now(),
+                            });
+                        }
+                    } else {
+                        self.smart_hover = None;
+                    }
+
+                    if self.smart_hover.is_some() {
+                        ctx.request_repaint();
+                    }
+                }
+
+                // --- Draw extension lines + dwell indicator (always visible) ---
+                if !self.smart_points.is_empty() {
+                    let clip_rect = canvas_result.painter.clip_rect();
+                    let cyan = egui::Color32::from_rgba_unmultiplied(0, 200, 220, 120);
+                    let cyan_stroke = egui::Stroke::new(0.8, cyan);
+
+                    for sp in &self.smart_points {
+                        let screen = self.canvas.viewport.world_to_screen(sp.position);
+
+                        canvas_result.painter.line_segment(
+                            [
+                                egui::pos2(clip_rect.left(), screen.y),
+                                egui::pos2(clip_rect.right(), screen.y),
+                            ],
+                            cyan_stroke,
+                        );
+                        canvas_result.painter.line_segment(
+                            [
+                                egui::pos2(screen.x, clip_rect.top()),
+                                egui::pos2(screen.x, clip_rect.bottom()),
+                            ],
+                            cyan_stroke,
+                        );
+
+                        let size = 5.0;
+                        let diamond = vec![
+                            egui::pos2(screen.x, screen.y - size),
+                            egui::pos2(screen.x + size, screen.y),
+                            egui::pos2(screen.x, screen.y + size),
+                            egui::pos2(screen.x - size, screen.y),
+                        ];
+                        let cyan_solid = egui::Color32::from_rgb(0, 200, 220);
+                        canvas_result.painter.add(egui::Shape::convex_polygon(
+                            diamond,
+                            egui::Color32::from_rgba_unmultiplied(0, 200, 220, 80),
+                            egui::Stroke::new(1.5, cyan_solid),
+                        ));
+                    }
+                }
+
+                if let Some(ref hover) = self.smart_hover {
+                    let elapsed = hover.started.elapsed();
+                    if elapsed >= std::time::Duration::from_millis(300) {
+                        let progress = (elapsed.as_secs_f32() - 0.3) / 1.2;
+                        let progress = progress.clamp(0.0, 1.0);
+                        let screen = self.canvas.viewport.world_to_screen(hover.position);
+                        let radius = 4.0 + progress * 8.0;
+                        let cyan = egui::Color32::from_rgba_unmultiplied(0, 200, 220, (120.0 * progress) as u8);
+                        canvas_result.painter.circle_stroke(
+                            screen,
+                            radius,
+                            egui::Stroke::new(1.5, cyan),
+                        );
+                    }
+                }
+
                 // Copy selected IDs to avoid borrow conflict with selection mutations
                 let selected_ids_copy: Vec<uuid::Uuid> = self.selection.ids.clone();
+                let smart_positions: Vec<glam::Vec2> = self.smart_points.iter().map(|sp| sp.position).collect();
 
                 // Build tool context from copies (avoids borrow issues)
                 let tool_ctx = ToolContext {
@@ -2592,6 +2721,7 @@ impl eframe::App for GroveApp {
                     active_layer_id: self.project.layers.active_layer_id,
                     viewport_zoom: self.canvas.viewport.zoom,
                     selected_ids: &selected_ids_copy,
+                    smart_points: &smart_positions,
                 };
 
                 // --- Draw tool input ---
@@ -2664,6 +2794,16 @@ impl eframe::App for GroveApp {
                     if matches!(result, ToolResult::Continue) {
                         if ctx.input(|i| i.key_pressed(egui::Key::C)) {
                             result = tool.on_key_pressed(egui::Key::C);
+                        }
+                    }
+                    if matches!(result, ToolResult::Continue) {
+                        if ctx.input(|i| i.key_pressed(egui::Key::E)) {
+                            result = tool.on_key_pressed(egui::Key::E);
+                        }
+                    }
+                    if matches!(result, ToolResult::Continue) {
+                        if ctx.input(|i| i.key_pressed(egui::Key::Tab)) {
+                            result = tool.on_key_pressed(egui::Key::Tab);
                         }
                     }
 
@@ -2739,18 +2879,21 @@ impl eframe::App for GroveApp {
                         }
                     }
 
-                    // Escape clears selection
+                    // Escape clears selection and smart points
                     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
                         self.selection.clear();
                         self.bezier_edit = None;
                         self.box_select_start = None;
+                        self.smart_points.clear();
+                        self.smart_hover = None;
                     }
 
                     // Shift+Right-click: place anchor point (with snapping)
                     if shift && canvas_result.response.clicked_by(egui::PointerButton::Secondary) {
                         let snapped = if self.snap_config.enabled {
+                            let smart_positions: Vec<glam::Vec2> = self.smart_points.iter().map(|sp| sp.position).collect();
                             let candidates = crate::tools::snap_candidates_from_entities(
-                                pos, &self.project.entities, &self.snap_config,
+                                pos, &self.project.entities, &self.snap_config, &smart_positions,
                             );
                             let tolerance = self.snap_config.snap_distance / self.canvas.viewport.zoom;
                             grove_core::snap::best_snap(&candidates, tolerance)
@@ -2765,6 +2908,13 @@ impl eframe::App for GroveApp {
                     // Shift+C: clear anchor point
                     if shift && ctx.input(|i| i.key_pressed(egui::Key::C)) {
                         self.anchor_point = None;
+                    }
+
+                    // Space: return to Select mode (works from any tool)
+                    if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+                        drop(tool_ctx);
+                        self.switch_tool(ActiveToolType::Select);
+                        return;
                     }
 
                     // Modification shortcuts (Blender-style, when selection is non-empty)
@@ -2798,13 +2948,50 @@ impl eframe::App for GroveApp {
                                 }).unwrap_or(false);
                                 if is_polygon {
                                     drop(tool_ctx);
-                                    let tool = crate::tools::subtract_polygon::SubtractPolygonTool::new(sel_id);
+                                    let mut tool = crate::tools::subtract_polygon::SubtractPolygonTool::new(sel_id);
+                                    tool.cutout_shape = match self.shape_sub_tool {
+                                        ShapeTool::Circle => crate::tools::subtract_polygon::CutoutShape::Circle,
+                                        ShapeTool::Rect => crate::tools::subtract_polygon::CutoutShape::Rectangle,
+                                        _ => crate::tools::subtract_polygon::CutoutShape::Polygon,
+                                    };
                                     self.draw_tool = Some(Box::new(tool));
                                     self.active_tool_type = ActiveToolType::SubtractPolygon;
                                     self.tool_mode = ToolMode::Cutout;
                                     return;
                                 }
                             }
+                        }
+                    }
+
+                    // Ctrl+Arrow: nudge selected entities
+                    if ctrl && !self.selection.ids.is_empty() {
+                        let nudge = 10.0_f32; // 10 mm per press
+                        let delta = if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                            Some(glam::Vec2::new(0.0, -nudge))
+                        } else if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                            Some(glam::Vec2::new(0.0, nudge))
+                        } else if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+                            Some(glam::Vec2::new(-nudge, 0.0))
+                        } else if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+                            Some(glam::Vec2::new(nudge, 0.0))
+                        } else {
+                            None
+                        };
+                        if let Some(d) = delta {
+                            let ids: Vec<_> = self.selection.ids.clone();
+                            drop(tool_ctx);
+                            let commands: Vec<Box<dyn grove_core::commands::Command>> = ids
+                                .iter()
+                                .map(|&id| -> Box<dyn grove_core::commands::Command> {
+                                    Box::new(grove_core::commands::MoveEntityCommand::new(id, d))
+                                })
+                                .collect();
+                            let cmd = Box::new(grove_core::commands::CompoundCommand::new(
+                                commands,
+                                "Nudge entities",
+                            ));
+                            self.history.execute(cmd, &mut self.project);
+                            return;
                         }
                     }
 
@@ -2832,6 +3019,7 @@ impl eframe::App for GroveApp {
                         self.selection.clear();
                     }
                 }
+
             });
     }
 }

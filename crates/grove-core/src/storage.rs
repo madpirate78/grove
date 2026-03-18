@@ -15,7 +15,7 @@ use crate::layer::{Layer, LayerManager};
 use crate::project::{Project, ProjectMetadata};
 
 /// Current schema version. Bump when the schema changes.
-const SCHEMA_VERSION: i32 = 3;
+const SCHEMA_VERSION: i32 = 4;
 
 /// Save a project to a `.grove` SQLite file.
 pub fn save_project(project: &Project, path: &Path) -> Result<(), String> {
@@ -207,6 +207,50 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
         entities.push(entity);
     }
 
+    // Migrate old domain types to new unified types
+    let edging_layer_id = layer_manager.find_by_name("GD_HARDSCAPE_EDGING").map(|l| l.id);
+    let walls_layer_id = layer_manager.find_by_name("GD_HARDSCAPE_WALLS").map(|l| l.id);
+    for entity in &mut entities {
+        use crate::entity::DomainData;
+        use crate::garden::hardscape::SurfaceData;
+        let mut new_domain = None;
+        match &entity.domain {
+            DomainData::Path(p) => {
+                new_domain = Some(DomainData::Surface(SurfaceData::from_path(p)));
+            }
+            DomainData::Patio(p) => {
+                new_domain = Some(DomainData::Surface(SurfaceData::from_patio(p)));
+            }
+            DomainData::Decking(d) => {
+                new_domain = Some(DomainData::Surface(SurfaceData::from_decking(d)));
+            }
+            DomainData::RaisedBed(r) => {
+                use crate::garden::hardscape::{WallData, WallType};
+                new_domain = Some(DomainData::Wall(WallData {
+                    base: r.base.clone(),
+                    height_mm: r.height_mm,
+                    width_mm: r.wall_width_mm,
+                    wall_type: WallType::Retaining,
+                    capping: r.capping.clone(),
+                    capping_material: String::new(),
+                    foundation_depth_mm: 450,
+                    jointing: String::new(),
+                    base_level_mm: r.base_level_mm,
+                }));
+            }
+            _ => {}
+        }
+        if let Some(d) = new_domain {
+            entity.domain = d;
+        }
+        // Remap entities on GD_HARDSCAPE_EDGING → GD_HARDSCAPE_WALLS
+        if let (Some(edging_id), Some(walls_id)) = (edging_layer_id, walls_layer_id) {
+            if entity.layer_id == edging_id {
+                entity.layer_id = walls_id;
+            }
+        }
+    }
+
     // Read background images (gracefully handle missing table for v1 files)
     let mut background_images: Vec<BackgroundImage> = Vec::new();
     if let Ok(mut stmt) = conn.prepare("SELECT metadata, image_blob FROM background_images") {
@@ -382,6 +426,88 @@ mod tests {
         assert_eq!(d.title, "Planting Plan");
         assert_eq!(d.viewports.len(), 1);
         assert_eq!(d.revisions.len(), 1);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_surface_migration_from_path() {
+        use crate::garden::hardscape::{PathData, SurfaceLabel, SurfaceData};
+
+        let path_data = PathData::default();
+        let surface = SurfaceData::from_path(&path_data);
+        assert_eq!(surface.label, SurfaceLabel::Path);
+        assert_eq!(surface.width_mm, Some(900));
+        assert_eq!(surface.sub_base_depth_mm, 150);
+        assert_eq!(surface.laying_pattern, "Stretcher");
+    }
+
+    #[test]
+    fn test_surface_migration_from_patio() {
+        use crate::garden::hardscape::{PatioData, SurfaceLabel, SurfaceData, DrainageType};
+
+        let patio_data = PatioData::default();
+        let surface = SurfaceData::from_patio(&patio_data);
+        assert_eq!(surface.label, SurfaceLabel::Patio);
+        assert!(surface.width_mm.is_none());
+        assert!(matches!(surface.drainage, DrainageType::CrossFall));
+        assert_eq!(surface.cross_fall_mm_per_m, 15);
+    }
+
+    #[test]
+    fn test_surface_migration_from_decking() {
+        use crate::garden::hardscape::{DeckingData, SurfaceLabel, SurfaceData};
+
+        let decking_data = DeckingData::default();
+        let surface = SurfaceData::from_decking(&decking_data);
+        assert_eq!(surface.label, SurfaceLabel::Decking);
+        assert!(surface.width_mm.is_none());
+        assert_eq!(surface.board_width_mm, 140);
+        assert_eq!(surface.board_gap_mm, 6);
+    }
+
+    #[test]
+    fn test_old_entity_migration_on_load() {
+        // Create a project with old-style Path/Patio/Decking entities and save
+        let mut project = Project::new();
+
+        let mut path_entity = Entity::new(
+            "Path",
+            Geometry::Polyline(crate::entity::PolylineData {
+                vertices: vec![Vec2::ZERO, Vec2::new(1000.0, 0.0)],
+                closed: false,
+            }),
+            crate::entity::DomainData::Path(crate::garden::hardscape::PathData::default()),
+        );
+        path_entity.layer_id = project.layers.layers[0].id;
+        project.add_entity(path_entity);
+
+        let mut patio_entity = Entity::new(
+            "Patio",
+            Geometry::Polygon(crate::entity::PolygonData {
+                vertices: vec![Vec2::ZERO, Vec2::X * 1000.0, Vec2::ONE * 1000.0],
+                holes: Vec::new(),
+            }),
+            crate::entity::DomainData::Patio(crate::garden::hardscape::PatioData::default()),
+        );
+        patio_entity.layer_id = project.layers.layers[0].id;
+        project.add_entity(patio_entity);
+
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_grove_migration.grove");
+
+        save_project(&project, &path).unwrap();
+        let loaded = load_project(&path).unwrap();
+
+        // Verify migration
+        assert_eq!(loaded.entities.len(), 2);
+        assert!(matches!(&loaded.entities[0].domain, crate::entity::DomainData::Surface(_)));
+        assert!(matches!(&loaded.entities[1].domain, crate::entity::DomainData::Surface(_)));
+
+        if let crate::entity::DomainData::Surface(s) = &loaded.entities[0].domain {
+            assert_eq!(s.label, crate::garden::hardscape::SurfaceLabel::Path);
+            assert_eq!(s.width_mm, Some(900));
+        }
 
         let _ = std::fs::remove_file(&path);
     }

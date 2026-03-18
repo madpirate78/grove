@@ -448,6 +448,172 @@ impl Default for DeckingData {
 }
 
 // ---------------------------------------------------------------------------
+// Surface (unified replacement for Path/Patio/Decking)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SurfaceLabel {
+    Path,
+    Patio,
+    Decking,
+    Driveway,
+    GravelArea,
+    Terrace,
+    Landing,
+    Custom(String),
+}
+
+impl SurfaceLabel {
+    pub const PRESET: &'static [Self] = &[
+        Self::Path,
+        Self::Patio,
+        Self::Decking,
+        Self::Driveway,
+        Self::GravelArea,
+        Self::Terrace,
+        Self::Landing,
+    ];
+
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Path => "Path",
+            Self::Patio => "Patio",
+            Self::Decking => "Decking",
+            Self::Driveway => "Driveway",
+            Self::GravelArea => "Gravel Area",
+            Self::Terrace => "Terrace",
+            Self::Landing => "Landing",
+            Self::Custom(s) => s.as_str(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SurfaceData {
+    pub base: HardscapeBase,
+    pub label: SurfaceLabel,
+    /// Some = polyline path mode (regular-width), None = area polygon mode.
+    pub width_mm: Option<i32>,
+    pub sub_base_depth_mm: i32,
+    pub laying_pattern: String,
+    pub joint_width_mm: i32,
+    pub joint_material: String,
+    pub drainage: DrainageType,
+    pub cross_fall_mm_per_m: i32,
+    pub fall_direction_deg: f64,
+    pub finished_level_mm: f64,
+    pub board_width_mm: i32,
+    pub board_gap_mm: i32,
+    pub board_direction_deg: f64,
+}
+
+impl Default for SurfaceData {
+    fn default() -> Self {
+        Self {
+            base: HardscapeBase {
+                colour_code: "#C4B8A8".into(),
+                ..Default::default()
+            },
+            label: SurfaceLabel::Patio,
+            width_mm: None,
+            sub_base_depth_mm: 150,
+            laying_pattern: "Stretcher".into(),
+            joint_width_mm: 10,
+            joint_material: "Mortar".into(),
+            drainage: DrainageType::None,
+            cross_fall_mm_per_m: 0,
+            fall_direction_deg: 0.0,
+            finished_level_mm: 0.0,
+            board_width_mm: 0,
+            board_gap_mm: 0,
+            board_direction_deg: 0.0,
+        }
+    }
+}
+
+impl SurfaceData {
+    /// Migrate from old PathData.
+    pub fn from_path(p: &PathData) -> Self {
+        Self {
+            base: p.base.clone(),
+            label: SurfaceLabel::Path,
+            width_mm: Some(p.width_mm),
+            sub_base_depth_mm: p.sub_base_depth_mm,
+            laying_pattern: p.laying_pattern.clone(),
+            joint_width_mm: p.joint_width_mm,
+            joint_material: p.joint_material.clone(),
+            drainage: p.drainage,
+            cross_fall_mm_per_m: p.cross_fall_mm_per_m,
+            fall_direction_deg: 0.0,
+            finished_level_mm: 0.0,
+            board_width_mm: 0,
+            board_gap_mm: 0,
+            board_direction_deg: 0.0,
+        }
+    }
+
+    /// Migrate from old PatioData.
+    pub fn from_patio(p: &PatioData) -> Self {
+        let drainage = match p.drainage {
+            PatioDrainage::None => DrainageType::None,
+            PatioDrainage::CrossFall => DrainageType::CrossFall,
+            PatioDrainage::Permeable => DrainageType::Permeable,
+            PatioDrainage::AcoChannel => DrainageType::Channel,
+        };
+        Self {
+            base: p.base.clone(),
+            label: SurfaceLabel::Patio,
+            width_mm: None,
+            sub_base_depth_mm: p.sub_base_depth_mm,
+            laying_pattern: p.laying_pattern.clone(),
+            joint_width_mm: p.joint_width_mm,
+            joint_material: p.joint_material.clone(),
+            drainage,
+            cross_fall_mm_per_m: p.fall_rate_mm_per_m,
+            fall_direction_deg: p.fall_direction_deg,
+            finished_level_mm: p.finished_level_mm,
+            board_width_mm: 0,
+            board_gap_mm: 0,
+            board_direction_deg: 0.0,
+        }
+    }
+
+    /// Migrate from old DeckingData.
+    pub fn from_decking(d: &DeckingData) -> Self {
+        Self {
+            base: d.base.clone(),
+            label: SurfaceLabel::Decking,
+            width_mm: None,
+            sub_base_depth_mm: 0,
+            laying_pattern: String::new(),
+            joint_width_mm: 0,
+            joint_material: String::new(),
+            drainage: DrainageType::None,
+            cross_fall_mm_per_m: 0,
+            fall_direction_deg: 0.0,
+            finished_level_mm: 0.0,
+            board_width_mm: d.board_width_mm,
+            board_gap_mm: d.board_gap_mm,
+            board_direction_deg: d.board_direction_deg,
+        }
+    }
+
+    /// Default colour based on surface label.
+    pub fn default_colour(&self) -> [u8; 4] {
+        match &self.label {
+            SurfaceLabel::Path => [196, 184, 168, 255],      // warm grey
+            SurfaceLabel::Patio => [194, 178, 150, 255],     // sand
+            SurfaceLabel::Decking => [193, 154, 107, 255],   // timber
+            SurfaceLabel::Driveway => [170, 160, 150, 255],  // cool grey
+            SurfaceLabel::GravelArea => [200, 190, 170, 255],// gravel
+            SurfaceLabel::Terrace => [190, 175, 155, 255],   // warm stone
+            SurfaceLabel::Landing => [180, 170, 155, 255],   // light stone
+            SurfaceLabel::Custom(_) => [180, 170, 160, 255], // neutral
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // House
 // ---------------------------------------------------------------------------
 

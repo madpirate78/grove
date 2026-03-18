@@ -1,6 +1,8 @@
 use glam::Vec2;
 use serde::{Deserialize, Serialize};
 
+use crate::entity::{DomainData, Geometry};
+
 /// Axis-aligned bounding box.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct BoundingBox {
@@ -366,6 +368,263 @@ pub fn triangulate_polygon_with_holes(
     triangles
 }
 
+// ---------------------------------------------------------------------------
+// Edge trace support
+// ---------------------------------------------------------------------------
+
+/// A visible boundary polyline extracted from an entity for edge tracing.
+pub struct VisibleEdge {
+    pub vertices: Vec<Vec2>,
+    pub closed: bool,
+}
+
+/// Extract visible boundary polylines for an entity.
+///
+/// Width-offset entities (Wall, Path, Edging, Step, Surface with width, House)
+/// return both left and right offset sides as open polylines.
+/// Other geometry types return their natural boundary.
+pub fn visible_edges(geom: &Geometry, domain: &DomainData) -> Vec<VisibleEdge> {
+    // Width-offset entities: compute offset sides from centerline
+    if let Some(width) = domain.width_mm() {
+        if let Some(center_pts) = geom.centerline_points() {
+            if center_pts.len() >= 2 {
+                let half_w = width / 2.0;
+                let (left, right) = offset_polyline_sides(&center_pts, half_w);
+                return vec![
+                    VisibleEdge { vertices: left, closed: false },
+                    VisibleEdge { vertices: right, closed: false },
+                ];
+            }
+        }
+    }
+
+    match geom {
+        Geometry::Polygon(pg) => {
+            let mut edges = vec![VisibleEdge {
+                vertices: pg.vertices.clone(),
+                closed: true,
+            }];
+            for hole in &pg.holes {
+                edges.push(VisibleEdge {
+                    vertices: hole.clone(),
+                    closed: true,
+                });
+            }
+            edges
+        }
+        Geometry::Polyline(pl) => {
+            vec![VisibleEdge {
+                vertices: pl.vertices.clone(),
+                closed: pl.closed,
+            }]
+        }
+        Geometry::Rectangle(r) => {
+            let half = r.half_size;
+            let local = [
+                Vec2::new(-half.x, -half.y),
+                Vec2::new(half.x, -half.y),
+                Vec2::new(half.x, half.y),
+                Vec2::new(-half.x, half.y),
+            ];
+            let corners: Vec<Vec2> = if r.rotation.abs() < f32::EPSILON {
+                local.iter().map(|c| r.center + *c).collect()
+            } else {
+                let (sin, cos) = r.rotation.sin_cos();
+                local
+                    .iter()
+                    .map(|c| {
+                        r.center + Vec2::new(c.x * cos - c.y * sin, c.x * sin + c.y * cos)
+                    })
+                    .collect()
+            };
+            vec![VisibleEdge { vertices: corners, closed: true }]
+        }
+        Geometry::Circle(c) => {
+            let n = 64;
+            let vertices: Vec<Vec2> = (0..n)
+                .map(|i| {
+                    let angle = (i as f32) * std::f32::consts::TAU / (n as f32);
+                    c.center + Vec2::new(angle.cos(), angle.sin()) * c.radius
+                })
+                .collect();
+            vec![VisibleEdge { vertices, closed: true }]
+        }
+        Geometry::Arc(a) => {
+            let n = 32;
+            let sweep = a.end_angle - a.start_angle;
+            let vertices: Vec<Vec2> = (0..=n)
+                .map(|i| {
+                    let angle = a.start_angle + sweep * (i as f32) / (n as f32);
+                    a.center + Vec2::new(angle.cos(), angle.sin()) * a.radius
+                })
+                .collect();
+            vec![VisibleEdge { vertices, closed: false }]
+        }
+        Geometry::BezierPath(bp) => {
+            let flat = bp.flatten(16);
+            vec![VisibleEdge { vertices: flat, closed: bp.closed }]
+        }
+        Geometry::Line(l) => {
+            vec![VisibleEdge {
+                vertices: vec![l.start, l.end],
+                closed: false,
+            }]
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Find the closest point on a polyline to a given point.
+/// Returns `(projected_point, segment_index, t_along_segment)`.
+pub fn closest_point_on_polyline(
+    point: Vec2,
+    vertices: &[Vec2],
+    closed: bool,
+) -> (Vec2, usize, f32) {
+    let n = vertices.len();
+    if n == 0 {
+        return (Vec2::ZERO, 0, 0.0);
+    }
+    if n == 1 {
+        return (vertices[0], 0, 0.0);
+    }
+
+    let seg_count = if closed { n } else { n - 1 };
+    let mut best_dist = f32::MAX;
+    let mut best_point = vertices[0];
+    let mut best_seg = 0usize;
+    let mut best_t = 0.0f32;
+
+    for i in 0..seg_count {
+        let a = vertices[i];
+        let b = vertices[(i + 1) % n];
+        let ab = b - a;
+        let len_sq = ab.length_squared();
+        let t = if len_sq < f32::EPSILON {
+            0.0
+        } else {
+            ((point - a).dot(ab) / len_sq).clamp(0.0, 1.0)
+        };
+        let proj = a + ab * t;
+        let dist = (point - proj).length();
+        if dist < best_dist {
+            best_dist = dist;
+            best_point = proj;
+            best_seg = i;
+            best_t = t;
+        }
+    }
+
+    (best_point, best_seg, best_t)
+}
+
+/// Extract a section of a polyline between two boundary points.
+///
+/// `start_seg`/`start_t` and `end_seg`/`end_t` identify the two points on the polyline.
+/// For closed polylines, `reverse` takes the other way around.
+/// For open polylines, `reverse` is ignored (there's only one path).
+pub fn extract_polyline_section(
+    vertices: &[Vec2],
+    closed: bool,
+    start_seg: usize,
+    start_t: f32,
+    end_seg: usize,
+    end_t: f32,
+    reverse: bool,
+) -> Vec<Vec2> {
+    let n = vertices.len();
+    if n < 2 {
+        return Vec::new();
+    }
+
+    let start_pt = vertices[start_seg]
+        + (vertices[(start_seg + 1) % n] - vertices[start_seg]) * start_t;
+    let end_pt =
+        vertices[end_seg] + (vertices[(end_seg + 1) % n] - vertices[end_seg]) * end_t;
+
+    if !closed {
+        // Open polyline: always go from earlier to later
+        let (s_seg, s_t, s_pt, e_seg, e_t, e_pt) =
+            if (start_seg, ordered_float(start_t)) <= (end_seg, ordered_float(end_t)) {
+                (start_seg, start_t, start_pt, end_seg, end_t, end_pt)
+            } else {
+                (end_seg, end_t, end_pt, start_seg, start_t, start_pt)
+            };
+
+        let mut result = vec![s_pt];
+        // Add interior vertices between start and end segments
+        let first_interior = s_seg + 1;
+        let last_interior = if e_t > 0.0 { e_seg + 1 } else { e_seg };
+        for i in first_interior..last_interior {
+            if i < n {
+                result.push(vertices[i]);
+            }
+        }
+        if (e_pt - *result.last().unwrap()).length() > 0.01 {
+            result.push(e_pt);
+        }
+        return result;
+    }
+
+    // Closed polyline: compute forward path
+    let forward = extract_closed_forward(vertices, start_seg, start_pt, end_seg, end_pt);
+
+    if !reverse {
+        // Pick shorter path by default
+        let backward = extract_closed_forward(vertices, end_seg, end_pt, start_seg, start_pt);
+        let fwd_len = polyline_length(&forward);
+        let bwd_len = polyline_length(&backward);
+        if fwd_len <= bwd_len { forward } else { backward.into_iter().rev().collect() }
+    } else {
+        // Reverse: take the other way
+        let backward = extract_closed_forward(vertices, end_seg, end_pt, start_seg, start_pt);
+        backward.into_iter().rev().collect()
+    }
+}
+
+/// Extract forward path on a closed polyline from start to end, going in index order.
+fn extract_closed_forward(
+    vertices: &[Vec2],
+    start_seg: usize,
+    start_pt: Vec2,
+    end_seg: usize,
+    end_pt: Vec2,
+) -> Vec<Vec2> {
+    let n = vertices.len();
+    let mut result = vec![start_pt];
+
+    let mut seg = start_seg;
+    loop {
+        let next_vert = (seg + 1) % n;
+        if seg == end_seg {
+            if (end_pt - *result.last().unwrap()).length() > 0.01 {
+                result.push(end_pt);
+            }
+            break;
+        }
+        result.push(vertices[next_vert]);
+        seg = next_vert;
+        // Safety: if we've gone all the way around
+        if seg == start_seg {
+            if (end_pt - *result.last().unwrap()).length() > 0.01 {
+                result.push(end_pt);
+            }
+            break;
+        }
+    }
+
+    result
+}
+
+fn polyline_length(pts: &[Vec2]) -> f32 {
+    pts.windows(2).map(|w| (w[1] - w[0]).length()).sum()
+}
+
+/// Helper to make f32 orderable for tuple comparison.
+fn ordered_float(f: f32) -> u32 {
+    f.to_bits()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -604,5 +863,131 @@ mod tests {
         ];
         let triangles = triangulate_polygon_with_holes(&outer, &[]);
         assert_eq!(triangles.len(), 2); // A quad splits into 2 triangles
+    }
+
+    // Edge trace tests
+
+    #[test]
+    fn test_closest_point_on_polyline_open() {
+        let verts = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(100.0, 0.0),
+            Vec2::new(100.0, 100.0),
+        ];
+        // Point above midpoint of first segment
+        let (pt, seg, t) = closest_point_on_polyline(Vec2::new(50.0, 10.0), &verts, false);
+        assert_eq!(seg, 0);
+        assert!((t - 0.5).abs() < 0.01);
+        assert!((pt.x - 50.0).abs() < 0.01);
+        assert!(pt.y.abs() < 0.01);
+    }
+
+    #[test]
+    fn test_closest_point_on_polyline_closed() {
+        // Square: closing edge from (0,10) back to (0,0)
+        let verts = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(10.0, 0.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(0.0, 10.0),
+        ];
+        // Point to the left of the closing edge
+        let (pt, seg, _t) = closest_point_on_polyline(Vec2::new(-5.0, 5.0), &verts, true);
+        assert_eq!(seg, 3); // closing segment: vertex 3 -> vertex 0
+        assert!((pt.x - 0.0).abs() < 0.01);
+        assert!((pt.y - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_extract_polyline_section_open() {
+        let verts = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(10.0, 0.0),
+            Vec2::new(20.0, 0.0),
+            Vec2::new(30.0, 0.0),
+        ];
+        // Extract from midpoint of seg 0 to midpoint of seg 2
+        let section = extract_polyline_section(&verts, false, 0, 0.5, 2, 0.5, false);
+        assert_eq!(section.len(), 4); // start_pt, v[1], v[2], end_pt
+        assert!((section[0].x - 5.0).abs() < 0.01);
+        assert!((section[1].x - 10.0).abs() < 0.01);
+        assert!((section[2].x - 20.0).abs() < 0.01);
+        assert!((section[3].x - 25.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_extract_polyline_section_closed_shorter_path() {
+        // Square: 0=(0,0), 1=(10,0), 2=(10,10), 3=(0,10)
+        let verts = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(10.0, 0.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(0.0, 10.0),
+        ];
+        // From midpoint of seg 0 to midpoint of seg 1 (short side, 2 edges)
+        let section = extract_polyline_section(&verts, true, 0, 0.5, 1, 0.5, false);
+        // Forward: (5,0) -> (10,0) -> (10,5): 3 points, length ~15
+        // Backward: (5,0) -> (0,0) -> (0,10) -> (10,10) -> (10,5): 5 points, length ~35
+        // Should pick forward (shorter)
+        assert!(section.len() == 3);
+        assert!((section[0].x - 5.0).abs() < 0.01);
+        assert!((section[1].x - 10.0).abs() < 0.01);
+        assert!((section[2] - Vec2::new(10.0, 5.0)).length() < 0.01);
+    }
+
+    #[test]
+    fn test_extract_polyline_section_closed_reversed() {
+        let verts = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(10.0, 0.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(0.0, 10.0),
+        ];
+        let forward = extract_polyline_section(&verts, true, 0, 0.5, 1, 0.5, false);
+        let reversed = extract_polyline_section(&verts, true, 0, 0.5, 1, 0.5, true);
+        // Reversed should be the longer path
+        assert!(reversed.len() > forward.len());
+    }
+
+    #[test]
+    fn test_visible_edges_polygon() {
+        use crate::entity::{PolygonData, Geometry, DomainData};
+        let geom = Geometry::Polygon(PolygonData {
+            vertices: vec![
+                Vec2::new(0.0, 0.0),
+                Vec2::new(10.0, 0.0),
+                Vec2::new(10.0, 10.0),
+            ],
+            holes: Vec::new(),
+        });
+        let edges = visible_edges(&geom, &DomainData::None);
+        assert_eq!(edges.len(), 1);
+        assert!(edges[0].closed);
+        assert_eq!(edges[0].vertices.len(), 3);
+    }
+
+    #[test]
+    fn test_visible_edges_wall_offset() {
+        use crate::entity::{Geometry, LineData, DomainData};
+        use crate::garden::hardscape::WallData;
+        let geom = Geometry::Line(LineData {
+            start: Vec2::new(0.0, 0.0),
+            end: Vec2::new(100.0, 0.0),
+        });
+        let domain = DomainData::Wall(WallData {
+            width_mm: 200,
+            ..WallData::default()
+        });
+        let edges = visible_edges(&geom, &domain);
+        // Should get 2 edges (left and right offset)
+        assert_eq!(edges.len(), 2);
+        assert!(!edges[0].closed);
+        assert!(!edges[1].closed);
+        // Left should be offset in one direction, right in the other
+        let left_y = edges[0].vertices[0].y;
+        let right_y = edges[1].vertices[0].y;
+        assert!((left_y - (-100.0)).abs() < 1.0 || (left_y - 100.0).abs() < 1.0);
+        assert!((right_y - (-100.0)).abs() < 1.0 || (right_y - 100.0).abs() < 1.0);
+        assert!((left_y - right_y).abs() > 100.0); // they're on opposite sides
     }
 }

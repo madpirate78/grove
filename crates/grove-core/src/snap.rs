@@ -11,6 +11,7 @@ pub enum SnapType {
     Intersection,
     Perpendicular,
     Nearest,
+    Extension,
 }
 
 /// A snap result: the snapped position and what type it is.

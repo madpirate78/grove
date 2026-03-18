@@ -24,6 +24,26 @@ pub fn tool_button_colored(
     ui.add(button)
 }
 
+/// A toolbar button that can be disabled (greyed out and non-interactive).
+pub fn tool_button_enabled(
+    ui: &mut Ui,
+    label: impl Into<WidgetText>,
+    active: bool,
+    active_colour: Option<Color32>,
+    enabled: bool,
+) -> Response {
+    let label = label.into();
+    let fill = if active {
+        active_colour.unwrap_or(Color32::from_rgb(60, 90, 140))
+    } else {
+        Color32::from_rgb(45, 45, 50)
+    };
+    let button = egui::Button::new(label)
+        .fill(fill)
+        .min_size(Vec2::new(48.0, 36.0));
+    ui.add_enabled(enabled, button)
+}
+
 /// A toolbar separator line.
 pub fn tool_separator(ui: &mut Ui) {
     ui.add_space(4.0);

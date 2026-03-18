@@ -103,8 +103,11 @@ impl Tool for DrawLineTool {
     }
 
     fn on_key_pressed(&mut self, key: egui::Key) -> ToolResult {
-        if key == egui::Key::C {
-            self.drawer.toggle_curve_mode();
+        match key {
+            egui::Key::C => self.drawer.toggle_curve_mode(),
+            egui::Key::E => self.drawer.toggle_edge_trace(),
+            egui::Key::Tab => self.drawer.edge_trace_flip(),
+            _ => {}
         }
         ToolResult::Continue
     }
@@ -114,6 +117,9 @@ impl Tool for DrawLineTool {
     }
 
     fn on_key_escape(&mut self) -> ToolResult {
+        if self.drawer.edge_trace_cancel() {
+            return ToolResult::Continue;
+        }
         if self.drawer.anchors.is_empty() {
             ToolResult::Finished
         } else {
@@ -235,6 +241,26 @@ pub fn draw_snap_indicator(painter: &egui::Painter, viewport: &ViewTransform, sn
                 ],
                 stroke,
             );
+        }
+        SnapType::Extension => {
+            // Cyan crosshair marker
+            let cyan = egui::Color32::from_rgb(0, 200, 220);
+            let ext_stroke = egui::Stroke::new(1.5, cyan);
+            painter.line_segment(
+                [
+                    egui::pos2(screen.x - size, screen.y),
+                    egui::pos2(screen.x + size, screen.y),
+                ],
+                ext_stroke,
+            );
+            painter.line_segment(
+                [
+                    egui::pos2(screen.x, screen.y - size),
+                    egui::pos2(screen.x, screen.y + size),
+                ],
+                ext_stroke,
+            );
+            painter.circle_stroke(screen, size * 0.7, ext_stroke);
         }
         SnapType::Perpendicular | SnapType::Nearest => {
             // Diamond marker

@@ -115,7 +115,10 @@ impl ModifyTool {
 
         if ctx.snap_config.enabled {
             let (segs, centers) = Self::snap_data(ctx);
-            let candidates = snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
+            let mut candidates = snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
+            if !ctx.smart_points.is_empty() {
+                candidates.extend(super::extension_snap_candidates(constrained, ctx.smart_points));
+            }
             let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
             if let Some(result) = snap::best_snap(&candidates, tolerance) {
                 return result.position;
@@ -137,7 +140,10 @@ impl ModifyTool {
                 raw
             };
             let (segs, centers) = Self::snap_data(ctx);
-            let candidates = snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
+            let mut candidates = snap::snap_points(constrained, &segs, &centers, ctx.snap_config);
+            if !ctx.smart_points.is_empty() {
+                candidates.extend(super::extension_snap_candidates(constrained, ctx.smart_points));
+            }
             let tolerance = ctx.snap_config.snap_distance / ctx.viewport_zoom;
             self.snap = snap::best_snap(&candidates, tolerance);
         } else {
