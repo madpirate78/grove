@@ -691,13 +691,13 @@ impl Tool for PlaceHardscapeTool {
                             let width_stroke_col = egui::Color32::from_rgba_unmultiplied(
                                 col[0], col[1], col[2], 80,
                             );
-                            crate::view::canvas::draw_width_shape(
+                            crate::view::canvas::render_width_shape(
                                 painter,
-                                viewport,
                                 &preview_verts,
                                 w,
                                 width_fill,
                                 egui::Stroke::new(1.0, width_stroke_col),
+                                |v| viewport.world_to_screen(v),
                             );
                         }
                     }

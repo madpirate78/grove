@@ -86,6 +86,10 @@ impl Canvas {
     }
 
     fn draw_entity(&self, painter: &egui::Painter, entity: &Entity, selected: bool) {
+        // Entourage entities are rendered by EntourageRenderer with textures
+        if matches!(entity.domain, DomainData::Entourage(_)) {
+            return;
+        }
         let colour = if selected {
             ThemeColours::SELECTION
         } else {
@@ -119,7 +123,9 @@ impl Canvas {
                     )
                 };
                 let width_stroke = Stroke::new(if selected { 2.0 } else { 1.5 }, stroke_col);
-                draw_width_shape(painter, &self.viewport, &centerline, w, fill, width_stroke);
+                render_width_shape(painter, &centerline, w, fill, width_stroke, |v| {
+                    self.viewport.world_to_screen(v)
+                });
                 if selected {
                     if let Some(bb) = entity.geometry.bounding_box() {
                         self.draw_selection_handles(painter, bb.min, bb.max);
@@ -159,55 +165,19 @@ impl Canvas {
                 }
             }
             Geometry::Polygon(pg) => {
-                if pg.vertices.len() >= 3 {
-                    let fill = if matches!(entity.domain, DomainData::None) {
-                        Color32::TRANSPARENT
-                    } else {
-                        Color32::from_rgba_unmultiplied(
-                            entity.colour[0],
-                            entity.colour[1],
-                            entity.colour[2],
-                            30,
-                        )
-                    };
-
-                    {
-                        // Render all triangles as a single mesh so internal edges
-                        // don't get individually anti-aliased (which causes artifacts).
-                        let triangles = grove_core::geometry::triangulate_polygon_with_holes(
-                            &pg.vertices,
-                            &pg.holes,
-                        );
-                        let mut mesh = egui::Mesh::default();
-                        for tri in &triangles {
-                            let idx = mesh.vertices.len() as u32;
-                            for &v in tri {
-                                mesh.vertices.push(egui::epaint::Vertex {
-                                    pos: self.viewport.world_to_screen(v),
-                                    uv: egui::epaint::WHITE_UV,
-                                    color: fill,
-                                });
-                            }
-                            mesh.indices.extend_from_slice(&[idx, idx + 1, idx + 2]);
-                        }
-                        painter.add(egui::Shape::mesh(mesh));
-                        // Draw outer boundary
-                        let outer_pts: Vec<Pos2> = pg
-                            .vertices
-                            .iter()
-                            .map(|v| self.viewport.world_to_screen(*v))
-                            .collect();
-                        painter.add(egui::Shape::closed_line(outer_pts, stroke));
-                        // Draw hole boundaries
-                        for hole in &pg.holes {
-                            let hole_pts: Vec<Pos2> = hole
-                                .iter()
-                                .map(|v| self.viewport.world_to_screen(*v))
-                                .collect();
-                            painter.add(egui::Shape::closed_line(hole_pts, stroke));
-                        }
-                    }
-                }
+                let fill = if matches!(entity.domain, DomainData::None) {
+                    Color32::TRANSPARENT
+                } else {
+                    Color32::from_rgba_unmultiplied(
+                        entity.colour[0],
+                        entity.colour[1],
+                        entity.colour[2],
+                        30,
+                    )
+                };
+                render_polygon_mesh(painter, &pg.vertices, &pg.holes, fill, stroke, |v| {
+                    self.viewport.world_to_screen(v)
+                });
             }
             Geometry::Circle(c) => {
                 let screen_center = self.viewport.world_to_screen(c.center);
@@ -495,16 +465,83 @@ pub struct CanvasResponse {
     pub painter: egui::Painter,
 }
 
-/// Render a width-based shape from a centerline and width.
-/// Uses miter-joined left/right offsets to fill quads per segment — corners join cleanly.
-/// Callable from both canvas rendering and tool previews.
-pub(crate) fn draw_width_shape(
+/// Stroke a closed loop of vertices without triggering egui 0.31's unbounded
+/// miter spike at sharp corners.
+///
+/// egui's `add_line_loop` (used by `PathShape { closed: true }` and
+/// `Shape::closed_line`) hardcodes `CUT_OFF_SHARP_CORNERS: bool = false` — see
+/// emilk/egui#1226 — so closed paths with sharp corners produce miter joins
+/// that shoot off toward infinity. `add_open_points` (used by open paths) DOES
+/// apply the cut-off, so we emit an open path with the first vertex duplicated
+/// at the end. The closure point becomes a coincident butt-cap, invisible at
+/// the 1–2px strokes we use.
+pub(crate) fn stroke_closed_loop(painter: &egui::Painter, mut pts: Vec<Pos2>, stroke: Stroke) {
+    if pts.len() < 2 {
+        return;
+    }
+    pts.push(pts[0]);
+    painter.add(egui::Shape::line(pts, stroke));
+}
+
+/// Render a filled polygon (with optional holes) as a single `egui::Mesh` batch
+/// plus stroked boundaries on top.
+///
+/// Batching all triangles into one mesh is load-bearing: it prevents egui from
+/// anti-aliasing the internal triangulation edges, which would otherwise appear
+/// as "phantom tangents" slicing across the fill. Boundaries are stroked via
+/// `stroke_closed_loop` to work around egui's closed-path miter spike bug.
+/// Called from both the model page (`Canvas::draw_entity`) and the drawing
+/// page (`drawing_view`).
+pub(crate) fn render_polygon_mesh(
     painter: &egui::Painter,
-    viewport: &ViewTransform,
+    vertices: &[Vec2],
+    holes: &[Vec<Vec2>],
+    fill: Color32,
+    stroke: Stroke,
+    to_screen: impl Fn(Vec2) -> Pos2,
+) {
+    if vertices.len() < 3 {
+        return;
+    }
+
+    let triangles = grove_core::geometry::triangulate_polygon_with_holes(vertices, holes);
+    let mut mesh = egui::Mesh::default();
+    for tri in &triangles {
+        let idx = mesh.vertices.len() as u32;
+        for &v in tri {
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos: to_screen(v),
+                uv: egui::epaint::WHITE_UV,
+                color: fill,
+            });
+        }
+        mesh.indices.extend_from_slice(&[idx, idx + 1, idx + 2]);
+    }
+    painter.add(egui::Shape::mesh(mesh));
+
+    // Outer boundary — stroked as open path with duplicated first vertex to
+    // avoid egui 0.31's closed-path miter spike at sharp corners.
+    let outer_pts: Vec<Pos2> = vertices.iter().map(|v| to_screen(*v)).collect();
+    stroke_closed_loop(painter, outer_pts, stroke);
+
+    // Hole boundaries
+    for hole in holes {
+        let hole_pts: Vec<Pos2> = hole.iter().map(|v| to_screen(*v)).collect();
+        stroke_closed_loop(painter, hole_pts, stroke);
+    }
+}
+
+/// Render a width-based shape (wall, path, step, edging) from a centerline and width.
+/// Uses miter-joined left/right offsets to fill quads per segment, then strokes the
+/// full offset polygon for clean outer edges. Called from both the model page and
+/// the drawing page.
+pub(crate) fn render_width_shape(
+    painter: &egui::Painter,
     centerline: &[Vec2],
     width_mm: f32,
     fill: Color32,
     stroke: Stroke,
+    to_screen: impl Fn(Vec2) -> Pos2,
 ) {
     if centerline.len() < 2 {
         return;
@@ -512,32 +549,23 @@ pub(crate) fn draw_width_shape(
 
     let hw = width_mm / 2.0;
 
-    // Compute miter-joined left/right offset arrays
-    let (left, right) = offset_polyline_sides(centerline, hw);
-
     // Fill each segment as a quad using the miter-joined offsets
+    let (left, right) = offset_polyline_sides(centerline, hw);
     for i in 0..centerline.len() - 1 {
         let quad = vec![
-            viewport.world_to_screen(left[i]),
-            viewport.world_to_screen(left[i + 1]),
-            viewport.world_to_screen(right[i + 1]),
-            viewport.world_to_screen(right[i]),
+            to_screen(left[i]),
+            to_screen(left[i + 1]),
+            to_screen(right[i + 1]),
+            to_screen(right[i]),
         ];
         painter.add(egui::Shape::convex_polygon(quad, fill, Stroke::NONE));
     }
 
-    // Outline using the full offset polygon for clean edges
+    // Outline using the full offset polygon for clean edges — stroked as an
+    // open path to avoid egui 0.31's closed-path miter spike at sharp corners.
     let outline = offset_polyline(centerline, hw);
-    let screen_pts: Vec<Pos2> = outline
-        .iter()
-        .map(|v| viewport.world_to_screen(*v))
-        .collect();
-    painter.add(egui::Shape::Path(egui::epaint::PathShape {
-        points: screen_pts,
-        closed: true,
-        fill: Color32::TRANSPARENT,
-        stroke: egui::epaint::PathStroke::from(stroke),
-    }));
+    let screen_pts: Vec<Pos2> = outline.iter().map(|v| to_screen(*v)).collect();
+    stroke_closed_loop(painter, screen_pts, stroke);
 }
 
 /// Get the 4 corners of a RectData in world space.

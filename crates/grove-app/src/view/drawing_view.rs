@@ -3,9 +3,9 @@ use grove_core::drawing::drawing::{Drawing, DrawingAnnotation, DrawingViewport};
 use grove_core::drawing::layout::is_layer_visible_in_viewport;
 use grove_core::entity::Geometry;
 use grove_core::garden::colour::resolve_colour;
-use grove_core::geometry::{offset_polyline, offset_polyline_sides};
 use grove_core::project::Project;
 
+use super::canvas::{render_polygon_mesh, render_width_shape};
 use super::viewport::ViewTransform;
 
 const PAPER_COLOR: Color32 = Color32::WHITE;
@@ -128,7 +128,7 @@ pub fn draw_drawing_view(
                     let fill = Color32::from_rgba_unmultiplied(
                         entity.colour[0], entity.colour[1], entity.colour[2], 30,
                     );
-                    draw_width_shape_in_viewport(&clipped, &centerline, w, fill, stroke, &to_screen);
+                    render_width_shape(&clipped, &centerline, w, fill, stroke, &to_screen);
                     continue;
                 }
             }
@@ -495,45 +495,6 @@ fn draw_title_block_preview(
 
 // --- Entity rendering ---
 
-/// Render a width-based shape (wall, path, step, edging) within a viewport.
-/// Mirrors `draw_width_shape` from canvas.rs but uses a `to_screen` closure
-/// instead of a ViewTransform, matching the viewport coordinate system.
-fn draw_width_shape_in_viewport(
-    painter: &egui::Painter,
-    centerline: &[glam::Vec2],
-    width_mm: f32,
-    fill: Color32,
-    stroke: Stroke,
-    to_screen: &dyn Fn(glam::Vec2) -> Pos2,
-) {
-    if centerline.len() < 2 {
-        return;
-    }
-    let hw = width_mm / 2.0;
-
-    // Fill each segment as a quad using miter-joined offsets
-    let (left, right) = offset_polyline_sides(centerline, hw);
-    for i in 0..centerline.len() - 1 {
-        let quad = vec![
-            to_screen(left[i]),
-            to_screen(left[i + 1]),
-            to_screen(right[i + 1]),
-            to_screen(right[i]),
-        ];
-        painter.add(egui::Shape::convex_polygon(quad, fill, Stroke::NONE));
-    }
-
-    // Outline using the full offset polygon
-    let outline = offset_polyline(centerline, hw);
-    let screen_pts: Vec<Pos2> = outline.iter().map(|v| to_screen(*v)).collect();
-    painter.add(egui::Shape::Path(egui::epaint::PathShape {
-        points: screen_pts,
-        closed: true,
-        fill: Color32::TRANSPARENT,
-        stroke: egui::epaint::PathStroke::from(stroke),
-    }));
-}
-
 fn draw_entity_simple(
     painter: &egui::Painter,
     geometry: &Geometry,
@@ -564,43 +525,12 @@ fn draw_entity_simple(
             }
         }
         Geometry::Polygon(pg) => {
-            if pg.vertices.len() >= 3 {
-                let fill = if matches!(domain, grove_core::entity::DomainData::None) {
-                    Color32::TRANSPARENT
-                } else {
-                    Color32::from_rgba_unmultiplied(colour.r(), colour.g(), colour.b(), 30)
-                };
-
-                {
-                    // Render all triangles as a single mesh so internal edges
-                    // don't get individually anti-aliased (which causes artifacts).
-                    let triangles = grove_core::geometry::triangulate_polygon_with_holes(
-                        &pg.vertices,
-                        &pg.holes,
-                    );
-                    let mut mesh = egui::Mesh::default();
-                    for tri in &triangles {
-                        let idx = mesh.vertices.len() as u32;
-                        for &v in tri {
-                            mesh.vertices.push(egui::epaint::Vertex {
-                                pos: to_screen(v),
-                                uv: egui::epaint::WHITE_UV,
-                                color: fill,
-                            });
-                        }
-                        mesh.indices.extend_from_slice(&[idx, idx + 1, idx + 2]);
-                    }
-                    painter.add(egui::Shape::mesh(mesh));
-                    // Draw outer boundary
-                    let outer_pts: Vec<Pos2> = pg.vertices.iter().map(|v| to_screen(*v)).collect();
-                    painter.add(egui::Shape::closed_line(outer_pts, stroke));
-                    // Draw hole boundaries
-                    for hole in &pg.holes {
-                        let hole_pts: Vec<Pos2> = hole.iter().map(|v| to_screen(*v)).collect();
-                        painter.add(egui::Shape::closed_line(hole_pts, stroke));
-                    }
-                }
-            }
+            let fill = if matches!(domain, grove_core::entity::DomainData::None) {
+                Color32::TRANSPARENT
+            } else {
+                Color32::from_rgba_unmultiplied(colour.r(), colour.g(), colour.b(), 30)
+            };
+            render_polygon_mesh(painter, &pg.vertices, &pg.holes, fill, stroke, to_screen);
         }
         Geometry::Circle(c) => {
             let center = to_screen(c.center);
