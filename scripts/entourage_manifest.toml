@@ -26,6 +26,11 @@
 # Sizing reference:
 #   adult top-down ~500 mm diameter; child ~350 mm; sedan ~4500x1800 mm;
 #   bench ~1600x500 mm; garden shed ~2500x2000 mm.
+#
+# Optional field for .FCStd sources:
+#   mode          "hull" (default) for a clean convex-hull outline; "edges"
+#                 for every TechDraw-visible edge (use for ornate objects
+#                 whose internal detail matters, like the fountain).
 
 # ---------------- people ----------------
 
@@ -164,3 +169,4 @@ author = "FreeCAD community"
 source_page = "https://github.com/FreeCAD/FreeCAD-library/tree/master/Architectural%20Parts/Garden"
 width_mm = 1400
 height_mm = 1400
+mode = "edges"

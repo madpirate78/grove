@@ -2885,6 +2885,12 @@ impl eframe::App for GroveApp {
                             result = tool.on_key_pressed(egui::Key::Tab);
                         }
                     }
+                    if matches!(result, ToolResult::Continue)
+                        && self.active_tool_type == ActiveToolType::PlaceEntourage
+                        && ctx.input(|i| i.key_pressed(egui::Key::R))
+                    {
+                        result = tool.on_key_pressed(egui::Key::R);
+                    }
 
                     // Put tool back before handling result (which may clear it)
                     self.draw_tool = Some(tool);

@@ -109,8 +109,13 @@ def normalise_svg(data: bytes, width_mm: float, height_mm: float) -> bytes:
     return data[: m.start()] + new_open + data[m.end() :]
 
 
-def fcstd_to_svg(fcstd_path: Path, svg_path: Path) -> None:
-    """Run FreeCAD in console mode to convert a .FCStd file to an SVG."""
+def fcstd_to_svg(fcstd_path: Path, svg_path: Path, mode: str = "hull") -> None:
+    """Run FreeCAD in console mode to convert a .FCStd file to an SVG.
+
+    `mode` is passed through as the ENTOURAGE_MODE env var:
+      - "hull"  (default): convex hull of the 3D footprint — clean outline.
+      - "edges": every visible edge from TechDraw projection — detailed.
+    """
     appimage = os.environ.get(FREECAD_APPIMAGE_ENV)
     if not appimage:
         # Try a couple of sensible defaults.
@@ -127,6 +132,7 @@ def fcstd_to_svg(fcstd_path: Path, svg_path: Path) -> None:
         **os.environ,
         "FCSTD_INPUT": str(fcstd_path),
         "FCSTD_OUTPUT": str(svg_path),
+        "ENTOURAGE_MODE": mode,
     }
     cmd = [appimage, "--console", str(FCSTD_CONVERTER)]
     result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=180)
@@ -154,14 +160,14 @@ def write_item(item: dict, dry_run: bool) -> Path:
         if not cached.exists():
             print(f"  downloading {item['name']} (.FCStd source)")
             cached.write_bytes(download(url))
-        print(f"  converting {cached.name} via FreeCAD")
-        fcstd_to_svg(cached, dest)
-        # The generated viewBox is in the shape's native mm units, which we
-        # trust unless the manifest overrides. If the manifest width/height
-        # disagrees with the source, rewrite to manifest values.
-        raw = dest.read_bytes()
-        raw = normalise_svg(raw, float(item["width_mm"]), float(item["height_mm"]))
-        dest.write_bytes(raw)
+        mode = item.get("mode", "hull")
+        print(f"  converting {cached.name} via FreeCAD (mode={mode})")
+        fcstd_to_svg(cached, dest, mode=mode)
+        # The converter emits a viewBox in the shape's native millimetres —
+        # that IS the real-world size. We do not rewrite it from the manifest
+        # (the manifest width/height for FCStd items is informational only),
+        # because scaling the viewBox without scaling the paths would clip
+        # the drawing.
         size_kb = dest.stat().st_size / 1024
         print(f"  fetched {item['name']} ({size_kb:.1f} KB) -> {dest.relative_to(REPO_ROOT)}")
         return dest
