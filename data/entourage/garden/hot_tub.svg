@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1200 -1200 2400 2400" width="480" height="480">
+  <!-- Top-down hot tub ~2000mm diameter -->
+  <g fill="none" stroke="#404040" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Outer casing (wood surround) -->
+    <circle cx="0" cy="0" r="1050" fill="#a08050" stroke="#806030" stroke-width="12"/>
+    <!-- Wood panel lines -->
+    <circle cx="0" cy="0" r="1050" fill="none" stroke="#907040" stroke-width="2"/>
+    <!-- Tub rim -->
+    <circle cx="0" cy="0" r="950" fill="#708898" stroke="#506878" stroke-width="8"/>
+    <!-- Water surface -->
+    <circle cx="0" cy="0" r="880" fill="#90b8d0" stroke="#7098b0" stroke-width="3"/>
+    <!-- Seat sections (curved benches) -->
+    <path d="M-600,-600 A880,880 0 0,1 600,-600" fill="none" stroke="#6088a0" stroke-width="6"/>
+    <path d="M600,-600 A880,880 0 0,1 880,0" fill="none" stroke="#6088a0" stroke-width="6"/>
+    <path d="M-880,0 A880,880 0 0,1 -600,-600" fill="none" stroke="#6088a0" stroke-width="6"/>
+    <path d="M-880,0 A880,880 0 0,0 -600,600" fill="none" stroke="#6088a0" stroke-width="6"/>
+    <path d="M-600,600 A880,880 0 0,0 600,600" fill="none" stroke="#6088a0" stroke-width="6"/>
+    <path d="M600,600 A880,880 0 0,0 880,0" fill="none" stroke="#6088a0" stroke-width="6"/>
+    <!-- Jets (bubbles) -->
+    <circle cx="-500" cy="-400" r="30" fill="#b0d0e0" stroke="#90b0c0" stroke-width="2"/>
+    <circle cx="500" cy="-400" r="30" fill="#b0d0e0" stroke="#90b0c0" stroke-width="2"/>
+    <circle cx="-500" cy="400" r="30" fill="#b0d0e0" stroke="#90b0c0" stroke-width="2"/>
+    <circle cx="500" cy="400" r="30" fill="#b0d0e0" stroke="#90b0c0" stroke-width="2"/>
+    <circle cx="0" cy="600" r="30" fill="#b0d0e0" stroke="#90b0c0" stroke-width="2"/>
+    <circle cx="0" cy="-700" r="30" fill="#b0d0e0" stroke="#90b0c0" stroke-width="2"/>
+    <!-- Control panel -->
+    <rect x="850" y="-150" width="180" height="300" rx="15" fill="#606060" stroke="#404040" stroke-width="6"/>
+    <circle cx="940" cy="-50" r="20" fill="#80c080" stroke="#508050" stroke-width="3"/>
+    <circle cx="940" cy="50" r="20" fill="#e08080" stroke="#b05050" stroke-width="3"/>
+  </g>
+</svg>

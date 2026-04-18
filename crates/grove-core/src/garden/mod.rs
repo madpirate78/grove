@@ -6,3 +6,4 @@ pub mod colour;
 pub mod database;
 pub mod distribute;
 pub mod schedule;
+pub mod entourage;

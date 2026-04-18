@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-450 -1050 900 2100" width="300" height="700">
+  <!-- Top-down sun lounger ~700mm x 1800mm -->
+  <g fill="none" stroke="#404040" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Frame -->
+    <rect x="-320" y="-950" width="640" height="1900" rx="30" fill="#d8d0c0" stroke="#806840" stroke-width="8"/>
+    <!-- Mattress -->
+    <rect x="-280" y="-600" width="560" height="1500" rx="20" fill="#e0d8c8" stroke="#a09080" stroke-width="4"/>
+    <!-- Headrest (angled) -->
+    <rect x="-280" y="-910" width="560" height="280" rx="20" fill="#d0c8b8" stroke="#a09080" stroke-width="4"/>
+    <!-- Headrest hinge line -->
+    <line x1="-280" y1="-620" x2="280" y2="-620" stroke="#908070" stroke-width="3"/>
+    <!-- Side rails -->
+    <line x1="-320" y1="-950" x2="-320" y2="950" stroke="#806840" stroke-width="6"/>
+    <line x1="320" y1="-950" x2="320" y2="950" stroke="#806840" stroke-width="6"/>
+    <!-- Armrests -->
+    <rect x="-360" y="-500" width="50" height="300" rx="8" fill="#b89860" stroke="#806840" stroke-width="4"/>
+    <rect x="310" y="-500" width="50" height="300" rx="8" fill="#b89860" stroke="#806840" stroke-width="4"/>
+    <!-- Wheels at foot end -->
+    <circle cx="-280" cy="920" r="30" fill="#707070" stroke="#505050" stroke-width="4"/>
+    <circle cx="280" cy="920" r="30" fill="#707070" stroke="#505050" stroke-width="4"/>
+  </g>
+</svg>

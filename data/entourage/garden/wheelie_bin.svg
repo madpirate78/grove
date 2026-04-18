@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-350 -350 700 700" width="400" height="400">
+  <!-- Top-down wheelie bin ~600mm x 500mm -->
+  <g fill="none" stroke="#404040" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Bin body -->
+    <rect x="-250" y="-200" width="500" height="400" rx="30" fill="#505858" stroke="#404040" stroke-width="8"/>
+    <!-- Lid -->
+    <rect x="-240" y="-190" width="480" height="300" rx="25" fill="#607068" stroke="#506058" stroke-width="4"/>
+    <!-- Lid hinge -->
+    <line x1="-220" y1="100" x2="220" y2="100" stroke="#404040" stroke-width="6"/>
+    <!-- Handle -->
+    <rect x="-80" y="-180" width="160" height="25" rx="5" fill="#808080" stroke="#606060" stroke-width="3"/>
+    <!-- Lid ridge -->
+    <line x1="-200" y1="-50" x2="200" y2="-50" stroke="#506058" stroke-width="3"/>
+    <!-- Wheels -->
+    <circle cx="-180" cy="240" r="35" fill="#404040" stroke="#303030" stroke-width="4"/>
+    <circle cx="180" cy="240" r="35" fill="#404040" stroke="#303030" stroke-width="4"/>
+    <!-- Axle -->
+    <line x1="-180" y1="240" x2="180" y2="240" stroke="#505050" stroke-width="4"/>
+  </g>
+</svg>

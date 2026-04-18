@@ -287,6 +287,14 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
         }
     }
 
+    // Ensure GD_ENTOURAGE layer exists (migration for older projects)
+    let mut layer_manager = layer_manager;
+    if layer_manager.find_by_name("GD_ENTOURAGE").is_none() {
+        let mut l = Layer::new("GD_ENTOURAGE", [120, 120, 120, 255]);
+        l.order = 11;
+        layer_manager.add_layer(l);
+    }
+
     log::info!(
         "Loaded project from {} ({} layers, {} entities, {} bg images, {} drawings)",
         path.display(),

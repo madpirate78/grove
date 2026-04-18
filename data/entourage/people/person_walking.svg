@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-300 -350 600 700" width="600" height="700">
+  <!-- Top-down walking person with stride -->
+  <g fill="none" stroke="#404040" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Shadow/ground contact -->
+    <ellipse cx="0" cy="20" rx="130" ry="200" fill="#f0f0f0" stroke="none"/>
+    <!-- Trailing leg -->
+    <ellipse cx="40" cy="200" rx="40" ry="70" fill="#b8b8b8" stroke="#404040" transform="rotate(-10,40,200)"/>
+    <!-- Trailing foot -->
+    <ellipse cx="45" cy="280" rx="30" ry="22" fill="#b0b0b0" stroke="#404040"/>
+    <!-- Body torso -->
+    <ellipse cx="0" cy="80" rx="95" ry="100" fill="#d0d0d0" stroke="#404040"/>
+    <!-- Leading leg -->
+    <ellipse cx="-35" cy="-80" rx="40" ry="70" fill="#c8c8c8" stroke="#404040" transform="rotate(10,-35,-80)"/>
+    <!-- Leading foot -->
+    <ellipse cx="-40" cy="-160" rx="30" ry="22" fill="#c0c0c0" stroke="#404040"/>
+    <!-- Shoulders -->
+    <ellipse cx="0" cy="-10" rx="130" ry="70" fill="#d8d8d8" stroke="#404040"/>
+    <!-- Arm swing back -->
+    <path d="M130,-10 Q160,80 140,140" stroke="#404040" fill="none"/>
+    <!-- Arm swing forward -->
+    <path d="M-130,-10 Q-160,-80 -130,-130" stroke="#404040" fill="none"/>
+    <!-- Head -->
+    <circle cx="0" cy="-90" r="75" fill="#e0e0e0" stroke="#404040"/>
+  </g>
+</svg>

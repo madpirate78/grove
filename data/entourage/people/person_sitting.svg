@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-250 -250 500 500" width="500" height="500">
+  <!-- Top-down sitting person (compact, as seen from above on a chair) -->
+  <g fill="none" stroke="#404040" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Legs extending forward -->
+    <ellipse cx="-50" cy="140" rx="35" ry="60" fill="#c0c0c0" stroke="#404040"/>
+    <ellipse cx="50" cy="140" rx="35" ry="60" fill="#c0c0c0" stroke="#404040"/>
+    <!-- Feet -->
+    <ellipse cx="-50" cy="200" rx="28" ry="20" fill="#b0b0b0" stroke="#404040"/>
+    <ellipse cx="50" cy="200" rx="28" ry="20" fill="#b0b0b0" stroke="#404040"/>
+    <!-- Lap/thighs -->
+    <ellipse cx="0" cy="60" rx="90" ry="60" fill="#d0d0d0" stroke="#404040"/>
+    <!-- Torso -->
+    <ellipse cx="0" cy="-20" rx="85" ry="70" fill="#d8d8d8" stroke="#404040"/>
+    <!-- Arms on lap -->
+    <path d="M-85,-20 Q-110,30 -80,70" fill="none"/>
+    <path d="M85,-20 Q110,30 80,70" fill="none"/>
+    <!-- Shoulders -->
+    <ellipse cx="0" cy="-50" rx="110" ry="55" fill="#dcdcdc" stroke="#404040"/>
+    <!-- Head -->
+    <circle cx="0" cy="-120" r="70" fill="#e0e0e0" stroke="#404040"/>
+  </g>
+</svg>

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1200 -1200 2400 2400" width="480" height="480">
+  <!-- Top-down dining set: round table + 4 chairs, ~2000mm diameter -->
+  <g fill="none" stroke="#404040" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Chair 1 (top) -->
+    <g transform="translate(0,-800)">
+      <rect x="-180" y="-180" width="360" height="360" rx="20" fill="#d8cfc0" stroke="#706050"/>
+      <!-- Seat pad -->
+      <rect x="-140" y="-140" width="280" height="280" rx="15" fill="#e0d8c8" stroke="#908070" stroke-width="4"/>
+      <!-- Back rest -->
+      <rect x="-180" y="-220" width="360" height="60" rx="10" fill="#c8bfb0" stroke="#706050"/>
+    </g>
+    <!-- Chair 2 (bottom) -->
+    <g transform="translate(0,800)">
+      <rect x="-180" y="-180" width="360" height="360" rx="20" fill="#d8cfc0" stroke="#706050"/>
+      <rect x="-140" y="-140" width="280" height="280" rx="15" fill="#e0d8c8" stroke="#908070" stroke-width="4"/>
+      <rect x="-180" y="160" width="360" height="60" rx="10" fill="#c8bfb0" stroke="#706050"/>
+    </g>
+    <!-- Chair 3 (left) -->
+    <g transform="translate(-800,0)">
+      <rect x="-180" y="-180" width="360" height="360" rx="20" fill="#d8cfc0" stroke="#706050"/>
+      <rect x="-140" y="-140" width="280" height="280" rx="15" fill="#e0d8c8" stroke="#908070" stroke-width="4"/>
+      <rect x="-220" y="-180" width="60" height="360" rx="10" fill="#c8bfb0" stroke="#706050"/>
+    </g>
+    <!-- Chair 4 (right) -->
+    <g transform="translate(800,0)">
+      <rect x="-180" y="-180" width="360" height="360" rx="20" fill="#d8cfc0" stroke="#706050"/>
+      <rect x="-140" y="-140" width="280" height="280" rx="15" fill="#e0d8c8" stroke="#908070" stroke-width="4"/>
+      <rect x="160" y="-180" width="60" height="360" rx="10" fill="#c8bfb0" stroke="#706050"/>
+    </g>
+    <!-- Table -->
+    <circle cx="0" cy="0" r="500" fill="#c8b898" stroke="#706050" stroke-width="10"/>
+    <!-- Table edge detail -->
+    <circle cx="0" cy="0" r="470" fill="none" stroke="#b0a080" stroke-width="3"/>
+  </g>
+</svg>

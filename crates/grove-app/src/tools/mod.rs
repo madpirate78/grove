@@ -13,6 +13,7 @@ pub mod place_level;
 pub mod subtract_polygon;
 pub mod modify;
 pub mod array;
+pub mod place_entourage;
 
 use grove_core::commands::Command;
 use grove_core::entity::{Entity, Geometry};

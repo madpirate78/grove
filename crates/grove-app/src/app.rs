@@ -69,6 +69,7 @@ pub enum ActiveToolType {
     Modify,
     LinearArray,
     SubtractPolygon,
+    PlaceEntourage,
 }
 
 impl ActiveToolType {
@@ -88,6 +89,7 @@ impl ActiveToolType {
             Self::Modify => "Modify",
             Self::LinearArray => "Array",
             Self::SubtractPolygon => "Subtract",
+            Self::PlaceEntourage => "Entourage",
         }
     }
 }
@@ -103,6 +105,7 @@ pub enum ToolMode {
     Plant,
     Group,
     Level,
+    Entourage,
     Cutout,
 }
 
@@ -174,6 +177,7 @@ pub fn available_shapes(
             }
         }
         ToolMode::Cutout => &[ShapeTool::Line, ShapeTool::Circle, ShapeTool::Rect],
+        ToolMode::Entourage => &[ShapeTool::Point],
         ToolMode::Select | ToolMode::Move | ToolMode::Rotate => &[],
     }
 }
@@ -270,6 +274,11 @@ pub struct GroveApp {
     drawing_viewport: crate::view::viewport::ViewTransform,
     /// The drawing ID we last fit-to-page for (so we auto-fit on first entry).
     drawing_viewport_fitted_for: Option<uuid::Uuid>,
+
+    // Entourage
+    entourage_library: grove_core::garden::entourage::EntourageLibrary,
+    entourage_palette_state: crate::panels::entourage_palette::EntouragePaletteState,
+    entourage_renderer: crate::view::entourage_renderer::EntourageRenderer,
 }
 
 impl GroveApp {
@@ -294,6 +303,24 @@ impl GroveApp {
                 }
             }
         }
+
+        // Load entourage library from data/entourage/
+        let entourage_library = {
+            let search_paths = [
+                "data/entourage",
+                "../data/entourage",
+                "../../data/entourage",
+            ];
+            let mut lib = grove_core::garden::entourage::EntourageLibrary::new();
+            for path in &search_paths {
+                let p = std::path::Path::new(path);
+                if p.is_dir() {
+                    lib = grove_core::garden::entourage::EntourageLibrary::load_from_directory(p);
+                    break;
+                }
+            }
+            lib
+        };
 
         let recent_files = Self::load_recent_files();
 
@@ -331,6 +358,9 @@ impl GroveApp {
             drawing_interaction: crate::view::drawing_view::DrawingInteraction::default(),
             drawing_viewport: crate::view::viewport::ViewTransform::with_zoom_limits(0.5, 10.0),
             drawing_viewport_fitted_for: None,
+            entourage_library,
+            entourage_palette_state: crate::panels::entourage_palette::EntouragePaletteState::default(),
+            entourage_renderer: crate::view::entourage_renderer::EntourageRenderer::new(),
         }
     }
 
@@ -350,6 +380,7 @@ impl GroveApp {
             ActiveToolType::PlaceGroup => ToolMode::Group,
             ActiveToolType::PlaceHardscape => ToolMode::Hardscape,
             ActiveToolType::PlaceLevel => ToolMode::Level,
+            ActiveToolType::PlaceEntourage => ToolMode::Entourage,
             ActiveToolType::SubtractPolygon => ToolMode::Cutout,
             ActiveToolType::LinearArray => self.tool_mode, // keep current
         };
@@ -454,6 +485,18 @@ impl GroveApp {
                 let mut tool = crate::tools::place_level::PlaceLevelTool::new();
                 if let Some(layer) = self.project.layers.find_by_name(tool.target_layer_name()) {
                     tool.layer_id = layer.id;
+                }
+                Some(Box::new(tool))
+            }
+            ActiveToolType::PlaceEntourage => {
+                let mut tool = crate::tools::place_entourage::PlaceEntourageTool::new();
+                if let Some(layer) = self.project.layers.find_by_name("GD_ENTOURAGE") {
+                    tool.layer_id = layer.id;
+                }
+                // Auto-select first item from current category
+                let cat = self.entourage_palette_state.active_category;
+                if let Some(first) = self.entourage_library.items_for_category(cat).first() {
+                    tool.set_item((*first).clone());
                 }
                 Some(Box::new(tool))
             }
@@ -759,7 +802,7 @@ impl GroveApp {
                 }
             }
             // Single-option modes: the one available shape is always active
-            ToolMode::Plant | ToolMode::Group | ToolMode::Level => true,
+            ToolMode::Plant | ToolMode::Group | ToolMode::Level | ToolMode::Entourage => true,
             _ => false,
         }
     }
@@ -794,6 +837,10 @@ impl GroveApp {
             }
             ToolMode::Level => {
                 self.switch_tool(ActiveToolType::PlaceLevel);
+            }
+            ToolMode::Entourage => {
+                self.shape_sub_tool = ShapeTool::Point;
+                self.switch_tool(ActiveToolType::PlaceEntourage);
             }
             ToolMode::Cutout => {
                 // Cutout requires a polygon to be selected
@@ -1575,7 +1622,7 @@ impl eframe::App for GroveApp {
                 // Current mode colour for column 2 buttons
                 let mode_colour = match self.tool_mode {
                     ToolMode::Select | ToolMode::Move | ToolMode::Rotate | ToolMode::Shape => Some(blue),
-                    ToolMode::Hardscape | ToolMode::Plant | ToolMode::Group | ToolMode::Level => Some(green),
+                    ToolMode::Hardscape | ToolMode::Plant | ToolMode::Group | ToolMode::Level | ToolMode::Entourage => Some(green),
                     ToolMode::Cutout => Some(red),
                 };
 
@@ -1640,6 +1687,10 @@ impl eframe::App for GroveApp {
                         // Level
                         if grove_widgets::toolbar::tool_button_colored(ui, "Level", self.tool_mode == ToolMode::Level, Some(green)).clicked() {
                             mode_action = Some(ToolMode::Level);
+                        }
+                        // Entourage
+                        if grove_widgets::toolbar::tool_button_colored(ui, "Entour.", self.tool_mode == ToolMode::Entourage, Some(green)).clicked() {
+                            mode_action = Some(ToolMode::Entourage);
                         }
 
                         grove_widgets::toolbar::tool_separator(ui);
@@ -1764,6 +1815,24 @@ impl eframe::App for GroveApp {
                                     lt.layer_id = layer.id;
                                 }
                             }
+                        }
+                    }
+                });
+        }
+
+        // Entourage palette (model mode only)
+        if matches!(self.workspace_mode, WorkspaceMode::Model)
+            && self.active_tool_type == ActiveToolType::PlaceEntourage
+        {
+            SidePanel::left("entourage_palette")
+                .default_width(240.0)
+                .width_range(200.0..=360.0)
+                .show(ctx, |ui| {
+                    if let Some(ref mut tool) = self.draw_tool {
+                        if let Some(et) = tool.as_any_mut().downcast_mut::<crate::tools::place_entourage::PlaceEntourageTool>() {
+                            crate::panels::entourage_palette::draw_entourage_palette(
+                                ui, et, &self.entourage_library, &mut self.entourage_palette_state,
+                            );
                         }
                     }
                 });
@@ -2381,6 +2450,16 @@ impl eframe::App for GroveApp {
                     &self.project.entities,
                     &self.selection.ids,
                     |layer_id| layers.is_visible(layer_id),
+                );
+
+                // Render entourage images (textured quads)
+                self.entourage_renderer.draw(
+                    ctx,
+                    &canvas_result.painter,
+                    &self.canvas.viewport,
+                    &self.project.entities,
+                    &self.selection.ids,
+                    &|layer_id| self.project.layers.is_visible(layer_id),
                 );
 
                 // Draw tool preview

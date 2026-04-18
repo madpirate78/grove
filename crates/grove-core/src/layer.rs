@@ -56,6 +56,7 @@ impl LayerManager {
             ("GD_BOUNDARY", [158, 158, 158, 255], 8),
             ("GD_BUILDINGS", [117, 117, 117, 255], 9),
             ("GD_SURVEY", [189, 189, 189, 255], 10),
+            ("GD_ENTOURAGE", [120, 120, 120, 255], 11),
         ];
         defs.into_iter()
             .map(|(name, colour, order)| {
@@ -118,9 +119,10 @@ mod tests {
     #[test]
     fn test_default_layers_created() {
         let lm = LayerManager::new();
-        assert_eq!(lm.layers.len(), 11);
+        assert_eq!(lm.layers.len(), 12);
         assert!(lm.find_by_name("GD_PLANTING").is_some());
         assert!(lm.find_by_name("GD_DRAINAGE").is_some());
+        assert!(lm.find_by_name("GD_ENTOURAGE").is_some());
     }
 
     #[test]
@@ -129,9 +131,9 @@ mod tests {
         let custom = Layer::new("MY_LAYER", [255, 0, 0, 255]);
         let id = custom.id;
         lm.add_layer(custom);
-        assert_eq!(lm.layers.len(), 12);
+        assert_eq!(lm.layers.len(), 13);
         assert!(lm.find_by_id(id).is_some());
         lm.remove_layer(id);
-        assert_eq!(lm.layers.len(), 11);
+        assert_eq!(lm.layers.len(), 12);
     }
 }

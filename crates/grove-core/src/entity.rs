@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::garden::{
+    entourage::EntourageData,
     hardscape::*,
     levels::*,
     plant::{PlantData, PlantGroupData},
@@ -559,6 +560,7 @@ pub enum DomainData {
     House(HouseData),
     TitleBlock(TitleBlockData),
     Legend(LegendData),
+    Entourage(EntourageData),
 }
 
 impl DomainData {

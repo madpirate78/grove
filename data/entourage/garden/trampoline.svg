@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1700 -1700 3400 3400" width="480" height="480">
+  <!-- Top-down trampoline ~3000mm diameter -->
+  <g fill="none" stroke="#404040" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Outer frame/padding -->
+    <circle cx="0" cy="0" r="1500" fill="#4080c0" stroke="#306090" stroke-width="12"/>
+    <!-- Safety net poles (8) -->
+    <circle cx="0" cy="-1500" r="25" fill="#808080" stroke="#505050" stroke-width="4"/>
+    <circle cx="1061" cy="-1061" r="25" fill="#808080" stroke="#505050" stroke-width="4"/>
+    <circle cx="1500" cy="0" r="25" fill="#808080" stroke="#505050" stroke-width="4"/>
+    <circle cx="1061" cy="1061" r="25" fill="#808080" stroke="#505050" stroke-width="4"/>
+    <circle cx="0" cy="1500" r="25" fill="#808080" stroke="#505050" stroke-width="4"/>
+    <circle cx="-1061" cy="1061" r="25" fill="#808080" stroke="#505050" stroke-width="4"/>
+    <circle cx="-1500" cy="0" r="25" fill="#808080" stroke="#505050" stroke-width="4"/>
+    <circle cx="-1061" cy="-1061" r="25" fill="#808080" stroke="#505050" stroke-width="4"/>
+    <!-- Safety net circle -->
+    <circle cx="0" cy="0" r="1400" fill="none" stroke="#a0a0a0" stroke-width="3" stroke-dasharray="20,10"/>
+    <!-- Pad ring -->
+    <circle cx="0" cy="0" r="1500" fill="none" stroke="#306090" stroke-width="10"/>
+    <circle cx="0" cy="0" r="1350" fill="none" stroke="#306090" stroke-width="4"/>
+    <!-- Bounce mat -->
+    <circle cx="0" cy="0" r="1300" fill="#202020" stroke="#303030" stroke-width="6"/>
+    <!-- Mat texture (cross pattern) -->
+    <line x1="-1200" y1="0" x2="1200" y2="0" stroke="#383838" stroke-width="2"/>
+    <line x1="0" y1="-1200" x2="0" y2="1200" stroke="#383838" stroke-width="2"/>
+    <line x1="-849" y1="-849" x2="849" y2="849" stroke="#383838" stroke-width="2"/>
+    <line x1="849" y1="-849" x2="-849" y2="849" stroke="#383838" stroke-width="2"/>
+  </g>
+</svg>

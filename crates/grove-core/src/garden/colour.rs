@@ -95,6 +95,7 @@ pub fn domain_category_colour(domain: &DomainData) -> [u8; 4] {
         DomainData::Contour(_) => [140, 100, 70, 255],
         DomainData::SlopeArrow(_) => [100, 100, 100, 255],
         DomainData::DrainRun(_) => [80, 120, 160, 255],
+        DomainData::Entourage(_) => [120, 120, 120, 255],
         _ => [128, 128, 128, 255],  // Grey for None, TitleBlock, Legend
     }
 }

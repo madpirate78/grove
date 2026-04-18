@@ -5,4 +5,5 @@ pub mod hardscape_palette;
 pub mod level_palette;
 pub mod palette;
 pub mod properties;
+pub mod entourage_palette;
 pub mod widgets;

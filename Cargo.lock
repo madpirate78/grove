@@ -1922,6 +1922,7 @@ dependencies = [
 name = "grove-core"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "csv",
  "earcutr",
  "glam",
@@ -1929,11 +1930,13 @@ dependencies = [
  "image",
  "log",
  "rand 0.8.5",
+ "resvg",
  "rusqlite",
  "serde",
  "serde_json",
  "svg",
  "svg2pdf",
+ "tiny-skia",
  "usvg",
  "uuid",
 ]

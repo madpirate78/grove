@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1400 -1400 2800 2800" width="480" height="480">
+  <!-- Top-down parasol/umbrella ~2400mm diameter -->
+  <g fill="none" stroke="#404040" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Shadow -->
+    <circle cx="80" cy="80" r="1200" fill="#00000008" stroke="none"/>
+    <!-- Canopy -->
+    <circle cx="0" cy="0" r="1200" fill="#e8e0d0" stroke="#908070" stroke-width="10"/>
+    <!-- Canopy ribs -->
+    <line x1="0" y1="-1200" x2="0" y2="1200" stroke="#b0a090" stroke-width="4"/>
+    <line x1="-1200" y1="0" x2="1200" y2="0" stroke="#b0a090" stroke-width="4"/>
+    <line x1="-849" y1="-849" x2="849" y2="849" stroke="#b0a090" stroke-width="4"/>
+    <line x1="849" y1="-849" x2="-849" y2="849" stroke="#b0a090" stroke-width="4"/>
+    <!-- Canopy scalloped edge -->
+    <circle cx="0" cy="0" r="1200" fill="none" stroke="#c0b0a0" stroke-width="3" stroke-dasharray="30,15"/>
+    <!-- Centre pole -->
+    <circle cx="0" cy="0" r="25" fill="#808080" stroke="#505050" stroke-width="6"/>
+    <!-- Centre finial -->
+    <circle cx="0" cy="0" r="8" fill="#606060" stroke="none"/>
+  </g>
+</svg>

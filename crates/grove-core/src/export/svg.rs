@@ -48,6 +48,9 @@ pub fn stroke_weight_for_domain(domain: &DomainData) -> f32 {
     if matches!(domain, DomainData::House(_)) {
         return HOUSE_WEIGHT;
     }
+    if matches!(domain, DomainData::Entourage(_)) {
+        return MIN_WEIGHT;
+    }
 
     match domain.height_mm() {
         None => DEFAULT_WEIGHT,
@@ -674,6 +677,27 @@ fn geometry_to_svg(
             let y = r.center.y - r.half_size.y;
             let w = r.half_size.x * 2.0;
             let h = r.half_size.y * 2.0;
+
+            // Entourage: embed image as base64 <image> element
+            if let DomainData::Entourage(ref ent) = domain {
+                use base64::Engine;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&ent.image_data);
+                let href = format!("data:image/png;base64,{}", b64);
+                let mut img = element::Image::new()
+                    .set("x", x)
+                    .set("y", y)
+                    .set("width", w)
+                    .set("height", h)
+                    .set("href", href);
+                if r.rotation.abs() > f32::EPSILON {
+                    let deg = r.rotation.to_degrees();
+                    img = img.set(
+                        "transform",
+                        format!("rotate({} {} {})", deg, r.center.x, r.center.y),
+                    );
+                }
+                return Some(Box::new(img));
+            }
 
             let mut rect = element::Rectangle::new()
                 .set("x", x)
