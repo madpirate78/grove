@@ -3,5 +3,6 @@
 *.swo
 .DS_Store
 /scripts/.fcstd-cache/
+/scripts/.entourage-staging/
 __pycache__/
 *.pyc

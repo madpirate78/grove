@@ -39,3 +39,52 @@ A cost estimation system that calculates project costs from the entities in a de
 - **Phase A — Offline bill of quantities:** Enumerate entities, apply default unit costs, produce a simple table/export. No server needed, ships as part of Grove.
 - **Phase B — Export/import cost profiles:** Let users tweak unit costs and share profiles (JSON files) so landscapers in different regions can publish their own rate cards.
 - **Phase C — Online feedback service:** Server component that collects actuals vs estimates and computes regional adjustments.
+
+---
+
+## Per-Drawing Plant Rendering Styles
+
+**Status:** Brainstorming (2026-04-18)
+
+### Concept
+
+Today plants render identically in every drawing view: a filled circle with the common/botanical-name label. Real landscape plans show plants differently depending on the drawing's purpose:
+
+- **Master plan** — stylised canopy symbols (scalloped circles, flower rosettes) to communicate character at a glance.
+- **Planting plan** — numbered circles that key into a schedule table.
+- **Construction detail** — outline-only circles so hardscape reads clearly over the top.
+- **Sketch/concept** — loose, hand-drawn-looking blobs.
+
+A plant should know its species (`DomainData::Plant`) and leave the *rendering* to the drawing it appears in.
+
+### Proposed design
+
+Add a `plant_style: PlantStyle` field on `Drawing` (or on `DrawingViewport` for finer control — per-viewport is what `colour_mode` does already). Enum variants:
+
+```rust
+pub enum PlantStyle {
+    Simple,      // current: filled disk + label
+    Canopy,      // stylised top-down canopy symbol
+    Numbered,    // circle with schedule number
+    Outline,     // stroke only, no fill
+    Silhouette,  // solid opaque disk
+}
+```
+
+Drawing view renderer branches on `plant_style` in the block at `crates/grove-app/src/view/drawing_view.rs:540` (where `DomainData::Plant` is currently handled). Model view keeps the simple style — this is a drawing-specific presentation concern.
+
+Drawing properties panel gains a dropdown for style, alongside the existing `colour_mode` picker.
+
+### Open questions
+
+- Storage scope: per-drawing (simpler) or per-viewport (matches `colour_mode` precedent)? Per-viewport is more flexible.
+- Canopy symbols: procedural (drawn from Rust code) or loaded from SVG library (like entourage)? Procedural is simpler for a first cut; SVG library unlocks user-extensibility.
+- Numbered style needs a schedule-number source: auto-assigned by species, or a manual `number` field on each plant entity.
+- SVG export must mirror whatever the drawing view shows.
+
+### Suggested phases
+
+- **Phase A** — Add `PlantStyle` enum, wire to drawing/viewport, implement `Simple` and `Outline` (trivial). Drawing properties UI.
+- **Phase B** — Procedural `Canopy` (scalloped edge generator) and `Silhouette`.
+- **Phase C** — `Numbered` style with a planting-schedule numbering scheme.
+- **Phase D** — SVG library for canopy symbols (hook into the existing entourage pipeline).

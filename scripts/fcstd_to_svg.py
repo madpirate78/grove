@@ -57,10 +57,48 @@ def _convex_hull_xy(points):
     return lower[:-1] + upper[:-1]
 
 
+def _axis_indices(up_axis: str) -> tuple[int, int, int]:
+    """Return (u_axis, v_axis, up_axis) indices into a 3D vector.
+
+    The two non-up axes become the SVG's X and Y; we pick them so that
+    looking down the up-axis gives a right-handed 2D frame (u right, v up).
+    """
+    a = up_axis.upper()
+    if a == "Z":
+        return 0, 1, 2  # look down Z: X→u, Y→v
+    if a == "Y":
+        return 0, 2, 1  # look down Y: X→u, Z→v
+    if a == "X":
+        return 1, 2, 0  # look down X: Y→u, Z→v
+    raise ValueError(f"unknown up_axis: {up_axis!r}")
+
+
+def _detect_up_axis(bb) -> str:
+    """Heuristic: the up-axis is the one where the object rests on 0.
+
+    Most ground-mounted architectural FCStd models have min ≈ 0 on the
+    up-axis (object sits on the floor) and negative values permitted on
+    the other two axes. Fall back to Z if ambiguous.
+    """
+    mins = [bb.XMin, bb.YMin, bb.ZMin]
+    names = ["X", "Y", "Z"]
+    # Prefer axes where the min is at/near zero AND the extent is positive
+    candidates = [
+        (abs(m), i) for i, m in enumerate(mins) if m >= -1.0
+    ]
+    if not candidates:
+        return "Z"
+    # Smallest abs(min) wins; ties break by index (X < Y < Z)
+    candidates.sort()
+    return names[candidates[0][1]]
+
+
 def main() -> int:
     input_path = os.environ.get("FCSTD_INPUT")
     output_path = os.environ.get("FCSTD_OUTPUT")
     mode = os.environ.get("ENTOURAGE_MODE", "hull").lower()
+    # "auto" (default) detects the up-axis from the bbox; "Z" / "Y" / "X" force it.
+    up_axis_env = os.environ.get("ENTOURAGE_UP_AXIS", "auto").lower()
     if not input_path or not output_path:
         print("FCSTD_INPUT and FCSTD_OUTPUT must be set", file=sys.stderr)
         return 2
@@ -97,12 +135,27 @@ def main() -> int:
             print(f"  fuse skipped: {e}", flush=True)
 
     bb = combined.BoundBox
-    width = bb.XLength
-    height = bb.YLength
-    print(f"bbox: {width:.1f} x {height:.1f} mm", flush=True)
+    if up_axis_env == "auto":
+        up_axis = _detect_up_axis(bb)
+        print(f"auto-detected up_axis = {up_axis}", flush=True)
+    else:
+        up_axis = up_axis_env.upper()
+    u_idx, v_idx, up_idx = _axis_indices(up_axis)
+
+    extents = [bb.XLength, bb.YLength, bb.ZLength]
+    mins = [bb.XMin, bb.YMin, bb.ZMin]
+    width = extents[u_idx]
+    height = extents[v_idx]
+    u_min = mins[u_idx]
+    v_min = mins[v_idx]
+    print(
+        f"bbox: X={bb.XLength:.1f} Y={bb.YLength:.1f} Z={bb.ZLength:.1f} mm | "
+        f"looking down {up_axis}: {width:.1f} x {height:.1f} mm",
+        flush=True,
+    )
 
     if width <= 0 or height <= 0:
-        print(f"invalid bbox {width}x{height}", file=sys.stderr)
+        print(f"invalid top-down bbox {width}x{height}", file=sys.stderr)
         return 4
 
     stroke_width = max(width, height) * 0.004
@@ -113,10 +166,16 @@ def main() -> int:
         f'viewBox="0 0 {width:g} {height:g}">',
     ]
 
+    def project(v):
+        """Drop the up-axis component; return the (u, v) pair in mm."""
+        coords = (v.x, v.y, v.z)
+        return coords[u_idx], coords[v_idx]
+
     if mode == "hull":
         # Tessellate the fused solid into triangles, collect every triangle
-        # vertex projected onto XY, then take the convex hull. This produces a
-        # single clean footprint outline — much more legible than edge-salad.
+        # vertex projected onto the view-plane, then take the convex hull.
+        # This produces a single clean footprint outline — much more legible
+        # than edge-salad.
         tessellation_tolerance = max(width, height) * 0.005  # 0.5% of size
         try:
             verts, _facets = combined.tessellate(tessellation_tolerance)
@@ -124,16 +183,16 @@ def main() -> int:
             print(f"tessellate failed: {e}", file=sys.stderr)
             return 5
 
-        projected = [(v.x, v.y) for v in verts]
+        projected = [project(v) for v in verts]
         print(f"projected {len(projected)} vertices for hull", flush=True)
         hull = _convex_hull_xy(projected)
         if len(hull) < 3:
             print("hull has < 3 points — nothing to draw", file=sys.stderr)
             return 6
 
-        # Translate to (0,0) origin, flip Y for SVG.
+        # Translate to (0,0) origin, flip V for SVG (screen Y grows downward).
         pts_svg = [
-            (x - bb.XMin, height - (y - bb.YMin)) for (x, y) in hull
+            (u - u_min, height - (v - v_min)) for (u, v) in hull
         ]
 
         d = f"M {pts_svg[0][0]:.2f} {pts_svg[0][1]:.2f}"
@@ -148,10 +207,13 @@ def main() -> int:
         print(f"wrote hull with {len(hull)} vertices", flush=True)
 
     else:
-        # Legacy "edges" mode: emit every visible edge from TechDraw projection.
+        # Legacy "edges" mode: emit every visible edge from TechDraw projection
+        # looking down the chosen up-axis.
+        direction_vec = [0.0, 0.0, 0.0]
+        direction_vec[up_idx] = 1.0
         try:
             import TechDraw  # type: ignore
-            direction = FreeCAD.Vector(0, 0, 1)
+            direction = FreeCAD.Vector(*direction_vec)
             visible = TechDraw.projectEx(combined, direction)
             visible_edges = visible[0] if visible and visible[0] else None
         except Exception as e:
@@ -175,8 +237,9 @@ def main() -> int:
                 continue
             if len(pts) < 2:
                 continue
-            xs = [p.x - bb.XMin for p in pts]
-            ys = [height - (p.y - bb.YMin) for p in pts]
+            projected_pts = [project(p) for p in pts]
+            xs = [u - u_min for (u, _v) in projected_pts]
+            ys = [height - (v - v_min) for (_u, v) in projected_pts]
 
             if max(xs) - min(xs) < 0.01 and max(ys) - min(ys) < 0.01:
                 continue

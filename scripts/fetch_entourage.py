@@ -109,12 +109,17 @@ def normalise_svg(data: bytes, width_mm: float, height_mm: float) -> bytes:
     return data[: m.start()] + new_open + data[m.end() :]
 
 
-def fcstd_to_svg(fcstd_path: Path, svg_path: Path, mode: str = "hull") -> None:
+def fcstd_to_svg(fcstd_path: Path, svg_path: Path, mode: str = "hull", up_axis: str = "auto") -> None:
     """Run FreeCAD in console mode to convert a .FCStd file to an SVG.
 
-    `mode` is passed through as the ENTOURAGE_MODE env var:
+    `mode` controls how the projection is drawn:
       - "hull"  (default): convex hull of the 3D footprint — clean outline.
       - "edges": every visible edge from TechDraw projection — detailed.
+    `up_axis` picks the 3D axis that points out of the page (gets dropped):
+      - "auto" (default): pick the axis whose min is closest to zero
+        (i.e. the object rests on a ground plane on that axis).
+      - "Z" / "Y" / "X": force a specific axis. Needed when the auto heuristic
+        picks wrong, e.g. some mannequin FCStd models are Y-up.
     """
     appimage = os.environ.get(FREECAD_APPIMAGE_ENV)
     if not appimage:
@@ -133,6 +138,7 @@ def fcstd_to_svg(fcstd_path: Path, svg_path: Path, mode: str = "hull") -> None:
         "FCSTD_INPUT": str(fcstd_path),
         "FCSTD_OUTPUT": str(svg_path),
         "ENTOURAGE_MODE": mode,
+        "ENTOURAGE_UP_AXIS": up_axis,
     }
     cmd = [appimage, "--console", str(FCSTD_CONVERTER)]
     result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=180)
@@ -161,8 +167,9 @@ def write_item(item: dict, dry_run: bool) -> Path:
             print(f"  downloading {item['name']} (.FCStd source)")
             cached.write_bytes(download(url))
         mode = item.get("mode", "hull")
-        print(f"  converting {cached.name} via FreeCAD (mode={mode})")
-        fcstd_to_svg(cached, dest, mode=mode)
+        up_axis = item.get("up_axis", "auto")
+        print(f"  converting {cached.name} via FreeCAD (mode={mode}, up={up_axis})")
+        fcstd_to_svg(cached, dest, mode=mode, up_axis=up_axis)
         # The converter emits a viewBox in the shape's native millimetres —
         # that IS the real-world size. We do not rewrite it from the manifest
         # (the manifest width/height for FCStd items is informational only),

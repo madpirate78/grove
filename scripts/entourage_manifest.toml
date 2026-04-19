@@ -33,54 +33,12 @@
 #                 whose internal detail matters, like the fountain).
 
 # ---------------- people ----------------
-
-[[items]]
-name = "Person Standing"
-category = "people"
-filename = "person_standing.svg"
-source = "FreeCAD-library"
-url = "https://raw.githubusercontent.com/FreeCAD/FreeCAD-library/master/DummiesAndSculptures/Mannequin_mp/Mannequin_mp-dummy-1850mm-standing-000.FCStd"
-licence = "lgpl"
-author = "FreeCAD community"
-source_page = "https://github.com/FreeCAD/FreeCAD-library/tree/master/DummiesAndSculptures/Mannequin_mp"
-width_mm = 500
-height_mm = 500
-
-[[items]]
-name = "Person Standing (Arms Out)"
-category = "people"
-filename = "person_standing_arms.svg"
-source = "FreeCAD-library"
-url = "https://raw.githubusercontent.com/FreeCAD/FreeCAD-library/master/DummiesAndSculptures/Mannequin_mp/Mannequin_mp-dummy-1850mm-standing-001.FCStd"
-licence = "lgpl"
-author = "FreeCAD community"
-source_page = "https://github.com/FreeCAD/FreeCAD-library/tree/master/DummiesAndSculptures/Mannequin_mp"
-width_mm = 1700
-height_mm = 500
-
-[[items]]
-name = "Person Walking"
-category = "people"
-filename = "person_walking.svg"
-source = "FreeCAD-library"
-url = "https://raw.githubusercontent.com/FreeCAD/FreeCAD-library/master/DummiesAndSculptures/Mannequin_mp/Mannequin_mp-dummy-1850mm-standing-002.FCStd"
-licence = "lgpl"
-author = "FreeCAD community"
-source_page = "https://github.com/FreeCAD/FreeCAD-library/tree/master/DummiesAndSculptures/Mannequin_mp"
-width_mm = 800
-height_mm = 500
-
-[[items]]
-name = "Person Sitting"
-category = "people"
-filename = "person_sitting.svg"
-source = "FreeCAD-library"
-url = "https://raw.githubusercontent.com/FreeCAD/FreeCAD-library/master/DummiesAndSculptures/Mannequin_mp/Mannequin_mp-dummy-1850mm-sitting-000.FCStd"
-licence = "lgpl"
-author = "FreeCAD community"
-source_page = "https://github.com/FreeCAD/FreeCAD-library/tree/master/DummiesAndSculptures/Mannequin_mp"
-width_mm = 700
-height_mm = 800
+#
+# Mannequin_mp FCStd models were tried here but gave unusable top-down
+# projections (convex hulls of T-pose / lying-flat skeletons look like
+# triangles). Replaced with AI-generated raster-wrapped SVGs via
+# scripts/extract_entourage_from_image.py — those live in
+# data/entourage/people/ directly, not re-fetchable from a manifest.
 
 # ---------------- furniture ----------------
 
