@@ -92,48 +92,68 @@ def crop_with_padding(rgb, bbox: tuple[int, int, int, int], pad: int):
 
 
 def white_to_alpha(crop_img, interior_fill: tuple[int, int, int] | None = None):
-    """Make the OUTSIDE whitespace transparent while leaving interior
-    whites opaque. Optionally tint the interior with a soft fill colour.
+    """Make the OUTSIDE whitespace transparent, force outlines to pure
+    crisp black, and leave the interior opaque white (or tinted).
 
-    Algorithm (flood-fill from the edges):
-      1. Classify every pixel as "light" (min(R,G,B) > 200) or "dark".
-      2. Label connected components of light pixels.
-      3. A component touching the image border is OUTSIDE whitespace.
-      4. OUTSIDE components → alpha=0. Everything else → alpha=255.
-      5. If `interior_fill` is given, recolour interior-light pixels.
-         Otherwise leave interior whites as pure white.
+    Algorithm:
+      1. Classify each pixel by its darkest channel:
+           - OUTLINE:  min < 130  → will become pure black (0,0,0,255)
+           - LIGHT:    min > 150  → candidate for transparent or interior
+           - MID-GREY: 130 ≤ min ≤ 150 → jagged AA fringe; resolved by
+                                        neighbourhood (merged into outline)
+      2. Flood-fill the LIGHT region from the image border. Components
+         reached from the border = OUTSIDE.
+      3. Write:
+           OUTSIDE  → (0, 0, 0, 0) transparent
+           OUTLINE  → (0, 0, 0, 255) crisp black
+           else     → (255, 255, 255, 255) or `interior_fill`
+
+    The hard thresholds kill the grey anti-aliasing halo that was
+    showing as white nobbliness just outside the outline.
     """
     import numpy as np
     from PIL import Image
     from scipy import ndimage
 
-    rgba = np.array(crop_img.convert("RGBA"))
-    h, w = rgba.shape[:2]
+    src = np.array(crop_img.convert("RGB"))
+    h, w = src.shape[:2]
 
-    r = rgba[:, :, 0].astype(np.int16)
-    g = rgba[:, :, 1].astype(np.int16)
-    b = rgba[:, :, 2].astype(np.int16)
-    min_channel = np.minimum(np.minimum(r, g), b)
-    light = min_channel > 200
+    r = src[:, :, 0].astype(np.int16)
+    g = src[:, :, 1].astype(np.int16)
+    b = src[:, :, 2].astype(np.int16)
+    min_ch = np.minimum(np.minimum(r, g), b)
 
-    labelled, _ = ndimage.label(light)
+    outline_mask = min_ch < 130
+    light_mask = min_ch > 150
+
+    # Flood-fill: light pixels reachable from any image-border pixel.
+    labelled, _ = ndimage.label(light_mask)
     edge_labels = set()
     for row in (0, h - 1):
         edge_labels.update(np.unique(labelled[row, :]).tolist())
     for col in (0, w - 1):
         edge_labels.update(np.unique(labelled[:, col]).tolist())
-    edge_labels.discard(0)  # 0 = not-light; dark outline pixels
+    edge_labels.discard(0)
     outside_mask = np.isin(labelled, list(edge_labels))
 
-    # Alpha: 0 outside, 255 elsewhere. Outlines and interior fills both opaque.
-    rgba[:, :, 3] = np.where(outside_mask, 0, 255)
+    out = np.zeros((h, w, 4), dtype=np.uint8)
+    fill = interior_fill if interior_fill is not None else (255, 255, 255)
 
-    if interior_fill is not None:
-        interior_light = light & ~outside_mask
-        for i, c in enumerate(interior_fill):
-            rgba[:, :, i] = np.where(interior_light, c, rgba[:, :, i])
+    # Default: interior (opaque, filled)
+    out[:, :, 0] = fill[0]
+    out[:, :, 1] = fill[1]
+    out[:, :, 2] = fill[2]
+    out[:, :, 3] = 255
 
-    return Image.fromarray(rgba, "RGBA")
+    # Override with crisp black outline
+    out[outline_mask] = [0, 0, 0, 255]
+
+    # Override with transparent outside (overrides interior AND any outline
+    # pixel that happened to fall inside an edge-connected light component,
+    # which shouldn't happen but is safe).
+    out[outside_mask] = [0, 0, 0, 0]
+
+    return Image.fromarray(out, "RGBA")
 
 
 def write_svg(crop_img, width_mm: float, height_mm: float, out_path: Path) -> None:
