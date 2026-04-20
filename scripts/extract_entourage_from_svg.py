@@ -44,6 +44,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STAGING = REPO_ROOT / "scripts" / ".entourage-staging"
 DATA_DIR = REPO_ROOT / "data" / "entourage"
+INKSCAPE_PREFS = Path.home() / ".config" / "inkscape" / "preferences.xml"
+
+DEFAULT_SIMPLIFY_THRESHOLD = 0.0005
 
 # How close two subpath bboxes need to be (relative to their size) to
 # be considered part of the same item. 0 means only touching.
@@ -279,6 +282,76 @@ def _overlap(a, b):
     return not (a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
 
 
+def find_top_level(subpaths: list[Subpath], indices: list[int]) -> list[int]:
+    """Return the subset of `indices` whose bboxes are not fully contained
+    inside any other subpath in the same set. These are the outer contours
+    of the item and together define its silhouette."""
+    bboxes = [subpaths[i].bbox for i in indices]
+    top = []
+    for a, ia in enumerate(indices):
+        ba = bboxes[a]
+        contained = False
+        for b, ib in enumerate(indices):
+            if a == b:
+                continue
+            bb = bboxes[b]
+            if bb[0] <= ba[0] and bb[1] <= ba[1] and bb[2] >= ba[2] and bb[3] >= ba[3]:
+                if bb != ba:  # strict containment
+                    contained = True
+                    break
+        if not contained:
+            top.append(ia)
+    return top
+
+
+def _set_simplify_threshold(value: float) -> str | None:
+    """Write `value` into Inkscape's simplifythreshold preference.
+    Returns the previous value so the caller can restore it."""
+    if not INKSCAPE_PREFS.exists():
+        return None
+    text = INKSCAPE_PREFS.read_text(encoding="utf-8")
+    m = re.search(r'(id="simplifythreshold"[^/]*?value=")([^"]+)(")', text, re.DOTALL)
+    if not m:
+        return None
+    old = m.group(2)
+    new_text = text[: m.start(2)] + f"{value}" + text[m.end(2) :]
+    INKSCAPE_PREFS.write_text(new_text, encoding="utf-8")
+    return old
+
+
+def _restore_simplify_threshold(old_value: str | None) -> None:
+    if old_value is None or not INKSCAPE_PREFS.exists():
+        return
+    text = INKSCAPE_PREFS.read_text(encoding="utf-8")
+    text = re.sub(
+        r'(id="simplifythreshold"[^/]*?value=")([^"]+)(")',
+        lambda m: m.group(1) + old_value + m.group(3),
+        text, count=1, flags=re.DOTALL,
+    )
+    INKSCAPE_PREFS.write_text(text, encoding="utf-8")
+
+
+def inkscape_simplify(svg_path: Path, threshold: float) -> None:
+    """Run Inkscape's path-simplify action in-place, temporarily setting
+    the simplifythreshold preference to `threshold`."""
+    import subprocess
+    old = _set_simplify_threshold(threshold)
+    try:
+        subprocess.run(
+            [
+                "inkscape",
+                str(svg_path),
+                "--actions",
+                f"select-all;path-simplify;export-filename:{svg_path};export-do",
+            ],
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+    finally:
+        _restore_simplify_threshold(old)
+
+
 def cluster_subpaths(subpaths: list[Subpath], gap: float) -> list[list[int]]:
     """Union-find: merge subpaths whose bboxes overlap (after expanding by `gap`)."""
     n = len(subpaths)
@@ -500,23 +573,28 @@ def stage(input_path: Path) -> int:
         vb_width = w + 2 * pad
         vb_height = h + 2 * pad
 
-        # Rebuild a mini-SVG with all subpaths in this cluster, translated
-        # so the cluster origin is at (pad, pad).
-        path_pieces = []
+        # Top-level (outermost) curves define the silhouette — fill them
+        # white so the symbol's interior is opaque white rather than
+        # transparent. All curves together are the ink, filled dark with
+        # fill-rule="evenodd" so holes (windows, wheel wells) punch through.
+        top_indices = find_top_level(subpaths, cluster)
+        silhouette_pieces = []
+        for si in top_indices:
+            moved = translate_subpath(subpaths[si].source, subpaths[si].start_abs, vb_x, vb_y)
+            silhouette_pieces.append(moved)
+        ink_pieces = []
         for si in cluster:
             moved = translate_subpath(subpaths[si].source, subpaths[si].start_abs, vb_x, vb_y)
-            path_pieces.append(moved)
-        d_joined = " ".join(path_pieces)
+            ink_pieces.append(moved)
+        d_silhouette = " ".join(silhouette_pieces)
+        d_ink = " ".join(ink_pieces)
 
-        # Inkscape trace-bitmap produces filled regions (not strokes) — the
-        # path's fill IS the ink. We reproduce that faithfully. fill-rule
-        # "evenodd" lets interior holes (like a window inside a car roof)
-        # cut out of their parent shape correctly.
         svg = (
             f'<?xml version="1.0" encoding="UTF-8"?>\n'
             f'<svg xmlns="http://www.w3.org/2000/svg" '
             f'viewBox="0 0 {vb_width:g} {vb_height:g}">\n'
-            f'  <path d="{d_joined}" fill="#2a2a2a" fill-rule="evenodd" stroke="none"/>\n'
+            f'  <path d="{d_silhouette}" fill="#ffffff" fill-rule="evenodd" stroke="none"/>\n'
+            f'  <path d="{d_ink}" fill="#2a2a2a" fill-rule="evenodd" stroke="none"/>\n'
             f'</svg>\n'
         )
         out_path = STAGING / f"vec_{idx:02d}.svg"
@@ -551,9 +629,14 @@ def _cluster_bbox(subpaths: list[Subpath], indices: list[int]) -> tuple[float, f
     return (xs_min, ys_min, xs_max, ys_max)
 
 
-def finalise() -> int:
+def finalise(simplify_threshold: float = DEFAULT_SIMPLIFY_THRESHOLD) -> int:
     """Read the labelled manifest and rewrite each vec_XX.svg with the
-    real-world mm viewBox into data/entourage/{category}/{filename}."""
+    real-world mm viewBox into data/entourage/{category}/{filename}.
+
+    If `simplify_threshold > 0`, run Inkscape's path-simplify over each
+    output SVG at that threshold (overrides the user's Inkscape pref
+    temporarily and restores it afterwards).
+    """
     manifest_path = STAGING / "manifest.json"
     if not manifest_path.exists():
         print(f"no manifest at {manifest_path} — run staging first", file=sys.stderr)
@@ -597,9 +680,11 @@ def finalise() -> int:
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / e["filename"]
         dest.write_text(new_svg, encoding="utf-8")
+        if simplify_threshold > 0:
+            inkscape_simplify(dest, simplify_threshold)
         written += 1
         print(f"  wrote {dest.relative_to(REPO_ROOT)}  ({e['width_mm']}×{e['height_mm']}mm)")
-    print(f"\nfinalised {written} vector symbol(s)")
+    print(f"\nfinalised {written} vector symbol(s)  (simplify={simplify_threshold})")
     return 0
 
 
@@ -607,9 +692,12 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("input", nargs="?", help="Input composite PNG/JPG/SVG")
     p.add_argument("--finalise", action="store_true")
+    p.add_argument("--simplify", type=float, default=DEFAULT_SIMPLIFY_THRESHOLD,
+                   help=f"Inkscape path-simplify threshold (0 to disable). "
+                        f"Default: {DEFAULT_SIMPLIFY_THRESHOLD}")
     args = p.parse_args()
     if args.finalise:
-        return finalise()
+        return finalise(simplify_threshold=args.simplify)
     if not args.input:
         p.error("provide an image/SVG path, or --finalise")
     path = Path(args.input).expanduser()
