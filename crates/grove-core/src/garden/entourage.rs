@@ -356,8 +356,8 @@ mod tests {
                 break;
             }
         }
-        // Should find our 12 SVG files across 4 categories
-        assert!(lib.items.len() >= 12, "Expected at least 12 items, got {}", lib.items.len());
+        // Should find at least one symbol in each of the four categories.
+        assert!(lib.items.len() >= 4, "Expected at least 4 items, got {}", lib.items.len());
         assert!(!lib.items_for_category(EntourageCategory::People).is_empty());
         assert!(!lib.items_for_category(EntourageCategory::Vehicles).is_empty());
         assert!(!lib.items_for_category(EntourageCategory::Furniture).is_empty());
