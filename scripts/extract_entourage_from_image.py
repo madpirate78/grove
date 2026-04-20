@@ -91,10 +91,60 @@ def crop_with_padding(rgb, bbox: tuple[int, int, int, int], pad: int):
     return Image.fromarray(crop)
 
 
+def white_to_alpha(crop_img, interior_fill: tuple[int, int, int] | None = None):
+    """Make the OUTSIDE whitespace transparent while leaving interior
+    whites opaque. Optionally tint the interior with a soft fill colour.
+
+    Algorithm (flood-fill from the edges):
+      1. Classify every pixel as "light" (min(R,G,B) > 200) or "dark".
+      2. Label connected components of light pixels.
+      3. A component touching the image border is OUTSIDE whitespace.
+      4. OUTSIDE components → alpha=0. Everything else → alpha=255.
+      5. If `interior_fill` is given, recolour interior-light pixels.
+         Otherwise leave interior whites as pure white.
+    """
+    import numpy as np
+    from PIL import Image
+    from scipy import ndimage
+
+    rgba = np.array(crop_img.convert("RGBA"))
+    h, w = rgba.shape[:2]
+
+    r = rgba[:, :, 0].astype(np.int16)
+    g = rgba[:, :, 1].astype(np.int16)
+    b = rgba[:, :, 2].astype(np.int16)
+    min_channel = np.minimum(np.minimum(r, g), b)
+    light = min_channel > 200
+
+    labelled, _ = ndimage.label(light)
+    edge_labels = set()
+    for row in (0, h - 1):
+        edge_labels.update(np.unique(labelled[row, :]).tolist())
+    for col in (0, w - 1):
+        edge_labels.update(np.unique(labelled[:, col]).tolist())
+    edge_labels.discard(0)  # 0 = not-light; dark outline pixels
+    outside_mask = np.isin(labelled, list(edge_labels))
+
+    # Alpha: 0 outside, 255 elsewhere. Outlines and interior fills both opaque.
+    rgba[:, :, 3] = np.where(outside_mask, 0, 255)
+
+    if interior_fill is not None:
+        interior_light = light & ~outside_mask
+        for i, c in enumerate(interior_fill):
+            rgba[:, :, i] = np.where(interior_light, c, rgba[:, :, i])
+
+    return Image.fromarray(rgba, "RGBA")
+
+
 def write_svg(crop_img, width_mm: float, height_mm: float, out_path: Path) -> None:
-    """Embed the PNG crop in an SVG sized to the given mm dimensions."""
+    """Embed the PNG crop in an SVG sized to the given mm dimensions.
+
+    The crop is first run through `white_to_alpha` so the symbol sits on
+    a transparent background rather than a white rectangle.
+    """
+    transparent = white_to_alpha(crop_img)
     buf = io.BytesIO()
-    crop_img.save(buf, format="PNG")
+    transparent.save(buf, format="PNG")
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")
 
     svg = (
@@ -195,17 +245,69 @@ def finalise() -> int:
     return 0
 
 
+def _parse_hex_rgb(s: str) -> tuple[int, int, int]:
+    s = s.lstrip("#")
+    if len(s) != 6:
+        raise ValueError(f"need 6 hex digits, got {s!r}")
+    return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+
+
+def make_existing_transparent(interior_fill: tuple[int, int, int] | None = None) -> int:
+    """Re-process raster-wrapped SVGs in data/entourage/ to make their
+    embedded PNGs transparent. Idempotent — running twice is fine.
+
+    If `interior_fill` is given, interior whites are tinted with that
+    RGB. Otherwise they stay pure white.
+    """
+    import re
+    from PIL import Image
+
+    svgs = list(DATA_DIR.rglob("*.svg"))
+    processed = 0
+    skipped = 0
+    for svg_path in svgs:
+        text = svg_path.read_text(encoding="utf-8")
+        m = re.search(r'href="data:image/png;base64,([A-Za-z0-9+/=]+)"', text)
+        if not m:
+            skipped += 1
+            continue
+        b64 = m.group(1)
+        raw = base64.b64decode(b64)
+        img = Image.open(io.BytesIO(raw))
+        transparent = white_to_alpha(img, interior_fill=interior_fill)
+        buf = io.BytesIO()
+        transparent.save(buf, format="PNG")
+        new_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        new_text = text.replace(b64, new_b64)
+        svg_path.write_text(new_text, encoding="utf-8")
+        processed += 1
+        print(f"  transparented {svg_path.relative_to(REPO_ROOT)}")
+
+    print(f"\nprocessed {processed} raster-wrapped SVG(s); {skipped} non-raster SVG(s) left alone")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("image", nargs="?", help="Input composite image")
     parser.add_argument("--finalise", action="store_true",
                         help="Emit labelled SVGs from an already-edited staging manifest")
+    parser.add_argument("--retransparent-existing", action="store_true",
+                        help="Re-process raster-wrapped SVGs in data/entourage/ to make "
+                             "their backgrounds transparent")
+    parser.add_argument("--interior-fill", default=None,
+                        help="Hex RGB for interior whites (e.g. f5eedd for soft buff). "
+                             "Default: leave interior pure white.")
     args = parser.parse_args()
 
+    fill = _parse_hex_rgb(args.interior_fill) if args.interior_fill else None
+
+    if args.retransparent_existing:
+        return make_existing_transparent(interior_fill=fill)
     if args.finalise:
         return finalise()
     if not args.image:
-        parser.error("provide an image path, or --finalise")
+        parser.error("provide an image path, --finalise, or --retransparent-existing")
     path = Path(args.image).expanduser()
     if not path.exists():
         print(f"not found: {path}", file=sys.stderr)
