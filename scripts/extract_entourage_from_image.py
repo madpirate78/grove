@@ -34,9 +34,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 STAGING = REPO_ROOT / "scripts" / ".entourage-staging"
 DATA_DIR = REPO_ROOT / "data" / "entourage"
 
-MIN_COMPONENT_AREA_PX = 2000  # ignore specks and tiny noise
+MIN_COMPONENT_AREA_PX = 400   # dark-pixel count; low enough to keep thin 1-2px outlines
+MIN_COMPONENT_SIDE_PX = 50    # bbox must be at least this wide/tall on one side
 PADDING_PX = 8
-THRESHOLD = 230  # pixels darker than this are "symbol"
+THRESHOLD = 230               # pixels darker than this are "symbol"
 
 
 @dataclass
@@ -67,6 +68,9 @@ def detect_regions(image_path: Path) -> tuple[list[Region], "numpy.ndarray"]:
             continue
         x0, x1 = xs.min(), xs.max() + 1
         y0, y1 = ys.min(), ys.max() + 1
+        # Also require a minimum bbox side so we don't catch long thin specks
+        if max(x1 - x0, y1 - y0) < MIN_COMPONENT_SIDE_PX:
+            continue
         regions.append(Region(index=len(regions), bbox=(x0, y0, x1, y1), area_px=len(xs)))
 
     # Sort by (row-band, then column) so the numbering is reading-order
