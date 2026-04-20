@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """
-Extract individual entourage symbols from a composite SVG (typically an
-Inkscape trace-bitmap of an LLM-generated PNG). Unlike the raster
-extractor, this preserves TRUE VECTOR output — each extracted symbol is
-a small standalone SVG with real path geometry.
+Extract individual entourage symbols as TRUE VECTOR SVGs from a
+composite input. Accepts either:
+  - a PNG/JPG (typically an LLM-generated composite), which is traced
+    automatically using the pure-Python potrace port (`potracer` on PyPI,
+    imported as `potrace`), or
+  - an SVG (e.g. from Inkscape's trace-bitmap dialog).
+
+Output is one small standalone SVG per detected item, each with a
+viewBox in real-world millimetres.
 
 Usage:
-    python3 scripts/extract_entourage_from_svg.py INPUT.svg
+    python3 scripts/extract_entourage_from_svg.py INPUT.(png|jpg|svg)
 
 Approach:
   1. Parse the input SVG's single path `d` attribute.
@@ -42,7 +47,10 @@ DATA_DIR = REPO_ROOT / "data" / "entourage"
 
 # How close two subpath bboxes need to be (relative to their size) to
 # be considered part of the same item. 0 means only touching.
-CLUSTER_GAP = 1.5  # user-space units — smaller than typical inter-item whitespace
+# Cluster gap is computed dynamically at runtime as a fraction of the source
+# coordinate space (e.g. 1% of the longer dimension). A 1408×768 pixel trace
+# gets ~14-unit gap; a 297×210 mm Inkscape SVG gets ~3-unit gap.
+CLUSTER_GAP_FRACTION = 0.01
 
 
 @dataclass
@@ -319,47 +327,163 @@ def extract_path_d(svg_text: str) -> tuple[str, float, float]:
     return d, w, h
 
 
+def trace_image_to_d(image_path: Path, threshold: int = 200) -> tuple[str, float, float]:
+    """Binarise an image (dark pixels = ink) and run potrace to return
+    a single composite `d` attribute plus the image dimensions."""
+    import potrace  # type: ignore
+    import numpy as np
+    from PIL import Image
+
+    img = Image.open(image_path).convert("L")
+    arr = np.array(img)
+    h_px, w_px = arr.shape
+    mask = arr < threshold
+
+    bmp = potrace.Bitmap(mask)
+    path = bmp.trace()
+
+    img_area = w_px * h_px
+    parts: list[str] = []
+    kept = 0
+    for curve in path:
+        sp = curve.start_point
+        xs = [sp.x]
+        ys = [sp.y]
+        seg_strs = [f"M {sp.x:.2f} {sp.y:.2f}"]
+        for seg in curve:
+            if seg.is_corner:
+                seg_strs.append(
+                    f"L {seg.c.x:.2f} {seg.c.y:.2f} "
+                    f"L {seg.end_point.x:.2f} {seg.end_point.y:.2f}"
+                )
+                xs += [seg.c.x, seg.end_point.x]
+                ys += [seg.c.y, seg.end_point.y]
+            else:
+                seg_strs.append(
+                    f"C {seg.c1.x:.2f} {seg.c1.y:.2f} "
+                    f"{seg.c2.x:.2f} {seg.c2.y:.2f} "
+                    f"{seg.end_point.x:.2f} {seg.end_point.y:.2f}"
+                )
+                xs += [seg.c1.x, seg.c2.x, seg.end_point.x]
+                ys += [seg.c1.y, seg.c2.y, seg.end_point.y]
+        seg_strs.append("Z")
+        # Drop the image-bounding rect potrace adds as its outer contour.
+        bbox_area = (max(xs) - min(xs)) * (max(ys) - min(ys))
+        if bbox_area > 0.5 * img_area:
+            continue
+        parts.append(" ".join(seg_strs))
+        kept += 1
+    if not parts:
+        raise RuntimeError("trace produced no usable curves")
+    print(f"traced {kept} curves from {image_path.name} ({w_px}x{h_px}px)")
+    return " ".join(parts), float(w_px), float(h_px)
+
+
 def translate_subpath(sub: str, start_abs: tuple[float, float], dx: float, dy: float) -> str:
-    """Replace the subpath's leading M/m with an absolute M at
-    (start_abs.x - dx, start_abs.y - dy). Subsequent pairs after an
-    initial `m` are relative and stay untouched (relative l's). Pairs
-    after an initial `M` are implicit absolute L's and need shifting.
+    """Rewrite a subpath so its coordinates are shifted by -dx, -dy.
+
+    Traverses every command token. Absolute commands have their
+    x/y coordinates shifted. Relative commands pass through unchanged
+    (since their deltas don't depend on absolute origin). The leading
+    M/m is always replaced with an absolute M at (start_abs - delta).
     """
-    m = re.match(r'([Mm])\s*([-0-9.,\s+eE]+?)(?=[A-Za-z]|$)', sub)
-    if not m:
-        return sub
-    cmd = m.group(1)
-    nums = [float(x) for x in re.findall(NUMBER_RE, m.group(2))]
-    if len(nums) < 2:
-        return sub
-    new_x = start_abs[0] - dx
-    new_y = start_abs[1] - dy
-    remaining = nums[2:]
-    rebuilt = f"M {new_x:.3f},{new_y:.3f}"
-    for i in range(0, len(remaining) - 1, 2):
-        rx, ry = remaining[i], remaining[i + 1]
-        if cmd == "M":
-            rebuilt += f" L {rx - dx:.3f},{ry - dy:.3f}"
+    out_parts: list[str] = []
+    first = True
+    for cmd, nums in _tokens(sub):
+        if first:
+            first = False
+            nx = start_abs[0] - dx
+            ny = start_abs[1] - dy
+            out_parts.append(f"M {nx:.3f},{ny:.3f}")
+            # If the leading M/m had continuation pairs, re-emit those.
+            if len(nums) > 2:
+                rest = nums[2:]
+                if cmd == "M":
+                    # Implicit absolute L's
+                    for i in range(0, len(rest) - 1, 2):
+                        out_parts.append(f"L {rest[i] - dx:.3f},{rest[i+1] - dy:.3f}")
+                else:
+                    # Implicit relative l's — unchanged
+                    for i in range(0, len(rest) - 1, 2):
+                        out_parts.append(f"l {rest[i]:.3f},{rest[i+1]:.3f}")
+            continue
+
+        if cmd.isupper():
+            # Absolute: shift each coordinate
+            c = cmd
+            if c in ("M", "L", "T"):
+                # pairs of (x, y)
+                shifted = []
+                for i in range(0, len(nums) - 1, 2):
+                    shifted.append(f"{nums[i] - dx:.3f},{nums[i+1] - dy:.3f}")
+                out_parts.append(f"{c} " + " ".join(shifted))
+            elif c == "H":
+                out_parts.append("H " + " ".join(f"{n - dx:.3f}" for n in nums))
+            elif c == "V":
+                out_parts.append("V " + " ".join(f"{n - dy:.3f}" for n in nums))
+            elif c == "C":
+                shifted = []
+                for i in range(0, len(nums) - 5, 6):
+                    shifted.append(
+                        f"{nums[i]-dx:.3f},{nums[i+1]-dy:.3f} "
+                        f"{nums[i+2]-dx:.3f},{nums[i+3]-dy:.3f} "
+                        f"{nums[i+4]-dx:.3f},{nums[i+5]-dy:.3f}"
+                    )
+                out_parts.append("C " + " ".join(shifted))
+            elif c == "S" or c == "Q":
+                shifted = []
+                for i in range(0, len(nums) - 3, 4):
+                    shifted.append(
+                        f"{nums[i]-dx:.3f},{nums[i+1]-dy:.3f} "
+                        f"{nums[i+2]-dx:.3f},{nums[i+3]-dy:.3f}"
+                    )
+                out_parts.append(f"{c} " + " ".join(shifted))
+            elif c == "A":
+                # rx ry xrot large sweep x y — shift only x,y
+                shifted = []
+                for i in range(0, len(nums) - 6, 7):
+                    shifted.append(
+                        f"{nums[i]} {nums[i+1]} {nums[i+2]} "
+                        f"{int(nums[i+3])} {int(nums[i+4])} "
+                        f"{nums[i+5]-dx:.3f},{nums[i+6]-dy:.3f}"
+                    )
+                out_parts.append("A " + " ".join(shifted))
+            elif c == "Z":
+                out_parts.append("Z")
+            else:
+                out_parts.append(cmd + " " + " ".join(f"{n:g}" for n in nums))
         else:
-            rebuilt += f" l {rx:.3f},{ry:.3f}"
-    tail = sub[m.end():]
-    return rebuilt + tail
+            # Relative — passes through (deltas don't depend on origin)
+            if cmd == "z":
+                out_parts.append("z")
+            else:
+                out_parts.append(cmd + " " + " ".join(f"{n:g}" for n in nums))
+    return " ".join(out_parts)
 
 
-def stage(svg_path: Path) -> int:
+def stage(input_path: Path) -> int:
     STAGING.mkdir(parents=True, exist_ok=True)
     for f in STAGING.glob("vec_*.svg"):
         f.unlink()
 
-    svg_text = svg_path.read_text(encoding="utf-8")
-    d, vb_w, vb_h = extract_path_d(svg_text)
+    suffix = input_path.suffix.lower()
+    if suffix in {".png", ".jpg", ".jpeg"}:
+        d, vb_w, vb_h = trace_image_to_d(input_path)
+    elif suffix == ".svg":
+        svg_text = input_path.read_text(encoding="utf-8")
+        d, vb_w, vb_h = extract_path_d(svg_text)
+    else:
+        print(f"unsupported input type: {suffix}", file=sys.stderr)
+        return 1
 
     subpaths = parse_all_subpaths(d)
     # Drop degenerate subpaths
     subpaths = [s for s in subpaths if s.bbox[2] > s.bbox[0] and s.bbox[3] > s.bbox[1]]
     print(f"parsed {len(subpaths)} non-degenerate subpaths")
 
-    clusters = cluster_subpaths(subpaths, gap=CLUSTER_GAP)
+    gap = max(vb_w, vb_h) * CLUSTER_GAP_FRACTION
+    print(f"cluster gap: {gap:.2f} (source viewport {vb_w:g}×{vb_h:g})")
+    clusters = cluster_subpaths(subpaths, gap=gap)
     # Ignore tiny clusters (noise)
     clusters = [c for c in clusters if _cluster_bbox(subpaths, c)[2] - _cluster_bbox(subpaths, c)[0] > 4
                                     and _cluster_bbox(subpaths, c)[3] - _cluster_bbox(subpaths, c)[1] > 4]
@@ -481,14 +605,14 @@ def finalise() -> int:
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
-    p.add_argument("svg", nargs="?", help="Input composite SVG")
+    p.add_argument("input", nargs="?", help="Input composite PNG/JPG/SVG")
     p.add_argument("--finalise", action="store_true")
     args = p.parse_args()
     if args.finalise:
         return finalise()
-    if not args.svg:
-        p.error("provide an SVG path, or --finalise")
-    path = Path(args.svg).expanduser()
+    if not args.input:
+        p.error("provide an image/SVG path, or --finalise")
+    path = Path(args.input).expanduser()
     if not path.exists():
         print(f"not found: {path}", file=sys.stderr)
         return 1
