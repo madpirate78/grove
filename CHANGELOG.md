@@ -9,6 +9,7 @@ as dated sections.
 ## [Unreleased]
 
 ### Added
+- **Cost estimate export (Estimate Builder Phase A)** — `garden::estimate` generates an offline bill of quantities: plants counted per species (matching the planting schedule), walls/fences/edging/steps priced per linear metre of centerline, patios/surfaces/decking/raised beds/pergolas/ponds per square metre (holes subtracted), width-based paths as length × width. Default UK unit rates with per-material multipliers in a serde-ready `UnitCosts` table (ground-work for Phase B shareable rate cards). New Export → "Export Cost Estimate CSV…" menu item.
 - **Procedural canopy symbols** for the `Canopy` plant style — `garden::canopy` generates deterministic outlines seeded by species (scalloped for deciduous trees, spiky for evergreens and grasses, lobed for shrubs) and rotated per instance from the plant's position, so plans don't look rubber-stamped. Rendered as filled vector paths in both the drawing view (shared polygon-mesh helper) and the drawing SVG export, replacing the concentric-ring placeholder.
 - **Per-viewport plant rendering styles** — `PlantStyle` (Simple / Canopy / Numbered / Outline / Silhouette) on `DrawingViewport`, selectable in the drawing properties panel and honoured by both the drawing view and drawing SVG export. `Numbered` renders the plant's row number in the planting schedule (deterministic order: category, then botanical name), and the CSV planting schedule gained a matching `#` column so markers key into it.
 

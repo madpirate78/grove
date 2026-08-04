@@ -142,9 +142,11 @@ mod tests {
         // Parse with usvg and verify geometry is preserved through the pipeline
         let mut fontdb = usvg::fontdb::Database::new();
         fontdb.load_system_fonts();
-        let mut opts = usvg::Options::default();
-        opts.font_family = "sans-serif".to_owned();
-        opts.fontdb = Arc::new(fontdb);
+        let opts = usvg::Options {
+            font_family: "sans-serif".to_owned(),
+            fontdb: Arc::new(fontdb),
+            ..Default::default()
+        };
 
         let tree = usvg::Tree::from_str(&svg_string, &opts).unwrap();
         let processed_svg = tree.to_string(&usvg::WriteOptions::default());

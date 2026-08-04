@@ -265,6 +265,21 @@ impl GroveApp {
                             }
                         }
                     }
+                    if ui.button("Export Cost Estimate CSV...").clicked() {
+                        ui.close_menu();
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_title("Export Cost Estimate")
+                            .add_filter("CSV", &["csv"])
+                            .save_file()
+                            .map(|p| ensure_extension(p, "csv"))
+                        {
+                            if let Err(e) = grove_core::export::csv_export::export_estimate_csv(
+                                &self.project.entities, &path,
+                            ) {
+                                log::error!("Estimate export failed: {e}");
+                            }
+                        }
+                    }
                     // Drawing SVG export (available when a drawing is open)
                     if let WorkspaceMode::Drawing(drawing_id) = &self.workspace_mode {
                         if let Some(drawing) = self.project.find_drawing(*drawing_id) {

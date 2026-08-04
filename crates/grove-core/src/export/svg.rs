@@ -1495,7 +1495,7 @@ mod tests {
 
     #[test]
     fn test_drawing_svg_annotation_leader() {
-        let mut project = make_project();
+        let project = make_project();
         let mut drawing = crate::drawing::drawing::Drawing::new("01", "Test");
         drawing.show_title_block = false;
         let vp = crate::drawing::drawing::DrawingViewport::new("Main", 100);
@@ -1664,8 +1664,10 @@ mod tests {
         assert!((weight - 0.70).abs() < 0.01, "House should always get 0.70mm weight");
 
         // Even with a different height, house still gets fixed weight
-        let mut house_data = crate::garden::hardscape::HouseData::default();
-        house_data.height_mm = 100;
+        let house_data = crate::garden::hardscape::HouseData {
+            height_mm: 100,
+            ..Default::default()
+        };
         let weight2 = stroke_weight_for_domain(&DomainData::House(house_data));
         assert!((weight2 - 0.70).abs() < 0.01, "House weight should be fixed regardless of height");
     }

@@ -379,7 +379,7 @@ mod tests {
     #[test]
     fn test_drawing_without_annotations_deserializes() {
         // Simulate old JSON without annotations field
-        let mut d = Drawing::new("01", "Test");
+        let d = Drawing::new("01", "Test");
         let json = serde_json::to_string(&d).unwrap();
         // Remove annotations from JSON to simulate old format
         let json = json.replace(",\"annotations\":[]", "");

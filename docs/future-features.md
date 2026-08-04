@@ -36,7 +36,7 @@ A cost estimation system that calculates project costs from the entities in a de
 
 ### Suggested Phases
 
-- **Phase A — Offline bill of quantities:** Enumerate entities, apply default unit costs, produce a simple table/export. No server needed, ships as part of Grove.
+- **Phase A — Offline bill of quantities:** DONE (2026-08-04). `garden::estimate` walks entities and produces a priced BOQ: plants counted per species (same recursion as the planting schedule, so quantities always agree), linear hardscape (walls/fences/edging/steps) measured along centerlines, area hardscape (patios/surfaces/decking/beds/pergolas/ponds) from geometry, with hole subtraction. `UnitCosts` is string-keyed + serde so Phase B rate cards are a JSON file away; seeded with rough UK installed rates and per-material multipliers. Exported via Export → Cost Estimate CSV.
 - **Phase B — Export/import cost profiles:** Let users tweak unit costs and share profiles (JSON files) so landscapers in different regions can publish their own rate cards.
 - **Phase C — Online feedback service:** Server component that collects actuals vs estimates and computes regional adjustments.
 

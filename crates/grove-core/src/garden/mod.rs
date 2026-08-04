@@ -1,4 +1,5 @@
 pub mod canopy;
+pub mod estimate;
 pub mod plant;
 pub mod hardscape;
 pub mod levels;
