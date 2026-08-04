@@ -576,24 +576,24 @@ fn plant_circle_svg(
             );
         }
         PlantStyle::Canopy => {
+            // Procedural canopy symbol: species-seeded outline, position-seeded rotation
+            let outline = crate::garden::canopy::plant_canopy_outline(plant, c.center, c.radius);
+            let d = crate::garden::canopy::outline_to_svg_path(&outline);
             group = group.add(
-                element::Circle::new()
-                    .set("cx", c.center.x)
-                    .set("cy", c.center.y)
-                    .set("r", c.radius)
+                element::Path::new()
+                    .set("d", d)
                     .set("fill", stroke_colour)
-                    .set("fill-opacity", 0.18)
+                    .set("fill-opacity", 0.15)
                     .set("stroke", stroke_colour)
                     .set("stroke-width", stroke_width),
             );
+            // Planting-position marker at the stem
             group = group.add(
                 element::Circle::new()
                     .set("cx", c.center.x)
                     .set("cy", c.center.y)
-                    .set("r", c.radius * 0.6)
-                    .set("fill", "none")
-                    .set("stroke", stroke_colour)
-                    .set("stroke-width", stroke_width * 0.7),
+                    .set("r", (c.radius * 0.06).max(30.0))
+                    .set("fill", stroke_colour),
             );
             group = group.add(plant_text(&plant_label(plant), c, font_size, stroke_colour));
         }
@@ -1337,6 +1337,47 @@ mod tests {
             "Numbered style should render schedule number 1");
         assert!(svg.contains(">\n2\n</text>") || svg.contains(">2</text>"),
             "Numbered style should render schedule number 2");
+    }
+
+    #[test]
+    fn test_drawing_svg_canopy_style_renders_symbol_path() {
+        use crate::drawing::drawing::PlantStyle;
+        let mut project = make_project();
+        let layer_id = project.layers.layers[0].id;
+        let plant_data = PlantData {
+            plant_id: uuid::Uuid::new_v4(),
+            botanical_name: "Acer palmatum".into(),
+            common_name: "Japanese Maple".into(),
+            category: Category::Tree,
+            height_mm: 4000,
+            spread_mm: 3000,
+            colour_code: "#4CAF50".into(),
+            flower_colour: String::new(),
+            foliage_colour: String::new(),
+            evergreen: false,
+            notes: String::new(),
+        };
+        let mut e = Entity::new(
+            "maple",
+            Geometry::Circle(CircleData { center: Vec2::new(0.0, 0.0), radius: 1500.0 }),
+            DomainData::Plant(plant_data),
+        );
+        e.layer_id = layer_id;
+        project.add_entity(e);
+
+        let mut drawing = crate::drawing::drawing::Drawing::new("01", "Master");
+        let mut vp = crate::drawing::drawing::DrawingViewport::new("Main", 100);
+        vp.plant_style = PlantStyle::Canopy;
+        drawing.viewports.push(vp);
+
+        let svg = export_drawing_svg(&project, &drawing, &SvgExportOptions::default()).unwrap();
+        // Deciduous tree → scalloped outline path, closed, plus a stem marker
+        let path_idx = svg.find("<path d=\"M").expect("Canopy should render an outline path");
+        let path_end = svg[path_idx..].find("/>").map(|i| path_idx + i).unwrap();
+        let path_elem = &svg[path_idx..path_end];
+        assert!(path_elem.contains("Z"), "Canopy outline should be closed");
+        assert!(path_elem.matches('L').count() > 20, "Outline should have many segments");
+        assert!(svg.contains("Japanese Maple"), "Canopy keeps the plant label");
     }
 
     #[test]

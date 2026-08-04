@@ -552,8 +552,13 @@ fn draw_entity_simple(
             let edge = to_screen(c.center + glam::Vec2::new(c.radius, 0.0));
             let radius_px = (edge.x - center.x).abs();
 
-            if matches!(domain, grove_core::entity::DomainData::Plant(_)) {
-                draw_plant_disc(painter, domain, center, radius_px, raw_colour, plant_style, schedule_no);
+            if let grove_core::entity::DomainData::Plant(ref pd) = domain {
+                if plant_style == PlantStyle::Canopy {
+                    // Canopy needs the world-space circle for the seeded outline
+                    draw_plant_canopy(painter, pd, c, center, radius_px, raw_colour, to_screen);
+                } else {
+                    draw_plant_disc(painter, domain, center, radius_px, raw_colour, plant_style, schedule_no);
+                }
             } else {
                 painter.circle_stroke(center, radius_px, stroke);
             }
@@ -680,6 +685,50 @@ fn plant_label(domain: &grove_core::entity::DomainData) -> Option<&str> {
     }
 }
 
+/// Draw the procedural canopy symbol for a plant (PlantStyle::Canopy).
+fn draw_plant_canopy(
+    painter: &egui::Painter,
+    plant: &grove_core::garden::plant::PlantData,
+    c: &grove_core::entity::CircleData,
+    center: Pos2,
+    radius_px: f32,
+    raw_colour: [u8; 4],
+    to_screen: &dyn Fn(glam::Vec2) -> Pos2,
+) {
+    let [r, g, b, _] = raw_colour;
+    let fill_soft = Color32::from_rgba_unmultiplied(r, g, b, 50);
+    let stroke_col = Color32::from_rgba_unmultiplied(r, g, b, 200);
+
+    let outline = grove_core::garden::canopy::plant_canopy_outline(plant, c.center, c.radius);
+    crate::view::canvas::render_polygon_mesh(
+        painter,
+        &outline,
+        &[],
+        fill_soft,
+        Stroke::new(1.5, stroke_col),
+        to_screen,
+    );
+
+    // Planting-position marker at the stem
+    painter.circle_filled(center, (radius_px * 0.06).clamp(1.5, 4.0), stroke_col);
+
+    if radius_px > 8.0 {
+        let label = if !plant.common_name.is_empty() {
+            &plant.common_name
+        } else {
+            &plant.botanical_name
+        };
+        let font_size = (radius_px * 0.32).clamp(8.0, 14.0);
+        painter.text(
+            center,
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::proportional(font_size),
+            Color32::from_rgba_unmultiplied(240, 240, 245, 200),
+        );
+    }
+}
+
 fn draw_plant_disc(
     painter: &egui::Painter,
     domain: &grove_core::entity::DomainData,
@@ -727,11 +776,10 @@ fn draw_plant_disc(
             painter.circle_filled(center, radius_px, solid);
         }
         PlantStyle::Canopy => {
-            // Outer stroked ring + soft fill + an inner concentric ring hinting at canopy foliage.
+            // Real canopy symbols render via draw_plant_canopy (needs world-space
+            // geometry); this fallback only fires if a caller can't provide it.
             painter.circle_filled(center, radius_px, fill_soft);
             painter.circle_stroke(center, radius_px, Stroke::new(1.5, stroke_col));
-            let inner = radius_px * 0.6;
-            painter.circle_stroke(center, inner, Stroke::new(1.0, stroke_col));
             draw_label(0.32, label_colour);
         }
         PlantStyle::Numbered => {

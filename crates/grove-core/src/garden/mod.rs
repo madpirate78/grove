@@ -1,3 +1,4 @@
+pub mod canopy;
 pub mod plant;
 pub mod hardscape;
 pub mod levels;
