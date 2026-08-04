@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/grove-core", "crates/grove-widgets", "crates/grove-app"]
+members = ["crates/grove-core", "crates/grove-app"]
 resolver = "2"
 
 [workspace.dependencies]

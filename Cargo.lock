@@ -1909,7 +1909,6 @@ dependencies = [
  "env_logger",
  "glam",
  "grove-core",
- "grove-widgets",
  "image",
  "log",
  "rfd",
@@ -1939,13 +1938,6 @@ dependencies = [
  "tiny-skia",
  "usvg",
  "uuid",
-]
-
-[[package]]
-name = "grove-widgets"
-version = "0.1.0"
-dependencies = [
- "egui",
 ]
 
 [[package]]

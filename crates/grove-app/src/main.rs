@@ -3,6 +3,7 @@ mod panels;
 mod theme;
 mod tools;
 mod view;
+mod widgets;
 
 use app::GroveApp;
 
