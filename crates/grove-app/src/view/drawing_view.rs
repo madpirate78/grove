@@ -92,6 +92,13 @@ pub fn draw_drawing_view(
     let margin_rect = Rect::from_min_max(Pos2::new(mtl.x, mtl.y), Pos2::new(mbr.x, mbr.y));
     painter.rect_stroke(margin_rect, 0.0, Stroke::new(0.5, MARGIN_COLOR), egui::StrokeKind::Outside);
 
+    // Schedule numbers for Numbered plant markers (keyed to the planting schedule)
+    let schedule_numbers = if drawing.viewports.iter().any(|vp| vp.plant_style == PlantStyle::Numbered) {
+        grove_core::garden::schedule::schedule_numbers(&project.entities)
+    } else {
+        std::collections::HashMap::new()
+    };
+
     // --- Viewports ---
     for vp in &drawing.viewports {
         let vp_rect = vp_screen_rect(vp, view);
@@ -132,7 +139,13 @@ pub fn draw_drawing_view(
                 }
             }
 
-            draw_entity_simple(&clipped, &entity.geometry, &entity.domain, stroke, colour, resolved, &to_screen, effective_scale, vp.plant_style);
+            let schedule_no = match (&entity.domain, vp.plant_style) {
+                (grove_core::entity::DomainData::Plant(pd), PlantStyle::Numbered) => {
+                    schedule_numbers.get(&pd.botanical_name).copied()
+                }
+                _ => None,
+            };
+            draw_entity_simple(&clipped, &entity.geometry, &entity.domain, stroke, colour, resolved, &to_screen, effective_scale, vp.plant_style, schedule_no);
         }
 
         // Viewport frame
@@ -505,6 +518,7 @@ fn draw_entity_simple(
     to_screen: &dyn Fn(glam::Vec2) -> Pos2,
     px_per_mm: f32,
     plant_style: PlantStyle,
+    schedule_no: Option<usize>,
 ) {
     match geometry {
         Geometry::None => {}
@@ -539,7 +553,7 @@ fn draw_entity_simple(
             let radius_px = (edge.x - center.x).abs();
 
             if matches!(domain, grove_core::entity::DomainData::Plant(_)) {
-                draw_plant_disc(painter, domain, center, radius_px, raw_colour, plant_style);
+                draw_plant_disc(painter, domain, center, radius_px, raw_colour, plant_style, schedule_no);
             } else {
                 painter.circle_stroke(center, radius_px, stroke);
             }
@@ -673,6 +687,7 @@ fn draw_plant_disc(
     radius_px: f32,
     raw_colour: [u8; 4],
     style: PlantStyle,
+    schedule_no: Option<usize>,
 ) {
     let r = raw_colour[0];
     let g = raw_colour[1];
@@ -720,13 +735,12 @@ fn draw_plant_disc(
             draw_label(0.32, label_colour);
         }
         PlantStyle::Numbered => {
-            // Solid-enough disc + small key number (placeholder: label's first char).
+            // Disc with the plant's row number in the planting schedule.
             painter.circle_filled(center, radius_px, fill_soft);
             painter.circle_stroke(center, radius_px, Stroke::new(1.5, stroke_col));
             if radius_px > 6.0 {
-                let key = plant_label(domain)
-                    .and_then(|s| s.chars().next())
-                    .map(|c| c.to_ascii_uppercase().to_string())
+                let key = schedule_no
+                    .map(|n| n.to_string())
                     .unwrap_or_else(|| "?".to_string());
                 let font_size = (radius_px * 0.8).clamp(10.0, 18.0);
                 painter.text(

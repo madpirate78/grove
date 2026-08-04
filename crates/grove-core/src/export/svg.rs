@@ -124,7 +124,7 @@ pub fn export_svg(project: &Project, options: &SvgExportOptions) -> Result<Strin
             };
             let stroke_colour = rgba_to_hex(colour);
             let sw = stroke_weight_for_domain(&entity.domain);
-            if let Some(elem) = geometry_to_svg(&entity.geometry, &entity.domain, &stroke_colour, sw, &entity.name, PlantStyle::Simple) {
+            if let Some(elem) = geometry_to_svg(&entity.geometry, &entity.domain, &stroke_colour, sw, &entity.name, PlantStyle::Simple, None) {
                 group = group.add(elem);
             }
         }
@@ -198,6 +198,13 @@ pub fn export_drawing_svg(
     }
     doc = doc.add(defs);
 
+    // Schedule numbers for Numbered plant markers (keyed to the planting schedule)
+    let schedule_numbers = if drawing.viewports.iter().any(|vp| vp.plant_style == PlantStyle::Numbered) {
+        crate::garden::schedule::schedule_numbers(&project.entities)
+    } else {
+        std::collections::HashMap::new()
+    };
+
     // Render each viewport
     for vp in &drawing.viewports {
         let clip_id = format!("clip-{}", vp.id);
@@ -246,8 +253,14 @@ pub fn export_drawing_svg(
             let stroke_colour = rgba_to_hex(resolved);
             let paper_sw = stroke_weight_for_domain(&entity.domain);
             let sw = paper_sw * vp.scale as f32;
+            let schedule_no = match (&entity.domain, vp.plant_style) {
+                (DomainData::Plant(pd), PlantStyle::Numbered) => {
+                    schedule_numbers.get(&pd.botanical_name).copied()
+                }
+                _ => None,
+            };
             if let Some(elem) = geometry_to_svg(
-                &entity.geometry, &entity.domain, &stroke_colour, sw, &entity.name, vp.plant_style,
+                &entity.geometry, &entity.domain, &stroke_colour, sw, &entity.name, vp.plant_style, schedule_no,
             ) {
                 vp_group = vp_group.add(elem);
             }
@@ -518,6 +531,7 @@ fn plant_circle_svg(
     stroke_colour: &str,
     stroke_width: f32,
     plant_style: PlantStyle,
+    schedule_no: Option<usize>,
 ) -> element::Group {
     // Font size in model-space mm; at 1:100 scale, 200mm → 2mm on paper
     let font_size = (c.radius * 0.6).max(200.0);
@@ -594,10 +608,8 @@ fn plant_circle_svg(
                     .set("stroke", stroke_colour)
                     .set("stroke-width", stroke_width),
             );
-            let key = plant_label(plant)
-                .chars()
-                .next()
-                .map(|ch| ch.to_ascii_uppercase().to_string())
+            let key = schedule_no
+                .map(|n| n.to_string())
                 .unwrap_or_else(|| "?".to_string());
             group = group.add(plant_text(&key, c, font_size * 1.4, stroke_colour));
         }
@@ -616,6 +628,7 @@ fn plant_text(text: &str, c: &CircleData, font_size: f32, stroke_colour: &str) -
         .set("fill", stroke_colour)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn geometry_to_svg(
     geometry: &Geometry,
     domain: &DomainData,
@@ -623,6 +636,7 @@ fn geometry_to_svg(
     stroke_width: f32,
     name: &str,
     plant_style: PlantStyle,
+    schedule_no: Option<usize>,
 ) -> Option<Box<dyn svg::Node>> {
     match geometry {
         Geometry::None => None,
@@ -727,7 +741,7 @@ fn geometry_to_svg(
         Geometry::Circle(c) => {
             // Check if this is a plant (domain-aware rendering)
             if let DomainData::Plant(ref plant) = domain {
-                Some(Box::new(plant_circle_svg(c, plant, stroke_colour, stroke_width, plant_style)))
+                Some(Box::new(plant_circle_svg(c, plant, stroke_colour, stroke_width, plant_style, schedule_no)))
             } else {
                 let circle = element::Circle::new()
                     .set("cx", c.center.x)
@@ -1279,6 +1293,50 @@ mod tests {
 
         let svg = export_drawing_svg(&project, &drawing, &SvgExportOptions::default()).unwrap();
         assert!(!svg.contains("x1=\"0\""), "Entity on hidden layer should be excluded from viewport");
+    }
+
+    #[test]
+    fn test_drawing_svg_numbered_plant_style() {
+        use crate::drawing::drawing::PlantStyle;
+        let mut project = make_project();
+        let layer_id = project.layers.layers[0].id;
+        for (name, category, x) in [
+            ("Rosa rugosa", Category::Shrub, 0.0_f32),
+            ("Acer palmatum", Category::Tree, 2000.0),
+        ] {
+            let plant_data = PlantData {
+                plant_id: uuid::Uuid::new_v4(),
+                botanical_name: name.into(),
+                common_name: name.into(),
+                category,
+                height_mm: 1000,
+                spread_mm: 800,
+                colour_code: "#4CAF50".into(),
+                flower_colour: String::new(),
+                foliage_colour: String::new(),
+                evergreen: false,
+                notes: String::new(),
+            };
+            let mut e = Entity::new(
+                name,
+                Geometry::Circle(CircleData { center: Vec2::new(x, 0.0), radius: 400.0 }),
+                DomainData::Plant(plant_data),
+            );
+            e.layer_id = layer_id;
+            project.add_entity(e);
+        }
+
+        let mut drawing = crate::drawing::drawing::Drawing::new("01", "Planting");
+        let mut vp = crate::drawing::drawing::DrawingViewport::new("Main", 100);
+        vp.plant_style = PlantStyle::Numbered;
+        drawing.viewports.push(vp);
+
+        let svg = export_drawing_svg(&project, &drawing, &SvgExportOptions::default()).unwrap();
+        // Schedule order: Rosa rugosa (Shrub) = 1, Acer palmatum (Tree) = 2
+        assert!(svg.contains(">\n1\n</text>") || svg.contains(">1</text>"),
+            "Numbered style should render schedule number 1");
+        assert!(svg.contains(">\n2\n</text>") || svg.contains(">2</text>"),
+            "Numbered style should render schedule number 2");
     }
 
     #[test]

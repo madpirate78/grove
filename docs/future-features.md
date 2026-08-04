@@ -84,7 +84,7 @@ Drawing properties panel gains a dropdown for style, alongside the existing `col
 
 ### Suggested phases
 
-- **Phase A** — Add `PlantStyle` enum, wire to drawing/viewport, implement `Simple` and `Outline` (trivial). Drawing properties UI.
-- **Phase B** — Procedural `Canopy` (scalloped edge generator) and `Silhouette`.
-- **Phase C** — `Numbered` style with a planting-schedule numbering scheme.
-- **Phase D** — SVG library for canopy symbols (hook into the existing entourage pipeline).
+- **Phase A** — DONE (2026-08-04): `PlantStyle` enum on `DrawingViewport`, `Simple`/`Outline`, drawing properties UI.
+- **Phase B** — DONE (2026-08-04): `Canopy` (concentric-ring hint, not yet scalloped) and `Silhouette`.
+- **Phase C** — DONE (2026-08-04): `Numbered` style renders the plant's 1-based row number in the planting schedule (`garden::schedule::schedule_numbers`, keyed by botanical name in schedule order: category, then botanical name). The CSV export now has a matching `#` column.
+- **Phase D** — SVG library for canopy symbols (hook into the existing entourage pipeline). A scalloped-edge procedural canopy would also improve Phase B's placeholder rings.

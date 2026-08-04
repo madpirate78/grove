@@ -34,6 +34,17 @@ pub fn generate_schedule(entities: &[Entity]) -> Vec<ScheduleEntry> {
     entries
 }
 
+/// Map botanical name → 1-based row number in the planting schedule.
+/// Numbers follow the schedule/CSV row order (category, then botanical name),
+/// so a numbered plant marker on a drawing keys into the exported schedule.
+pub fn schedule_numbers(entities: &[Entity]) -> HashMap<String, usize> {
+    generate_schedule(entities)
+        .iter()
+        .enumerate()
+        .map(|(i, entry)| (entry.botanical_name.clone(), i + 1))
+        .collect()
+}
+
 fn collect_plants(entity: &Entity, counts: &mut HashMap<String, ScheduleEntry>) {
     if let DomainData::Plant(ref data) = entity.domain {
         counts
@@ -62,6 +73,7 @@ pub fn export_schedule_csv<W: std::io::Write>(
 ) -> Result<(), String> {
     let mut wtr = csv::Writer::from_writer(writer);
     wtr.write_record([
+        "#",
         "Botanical Name",
         "Common Name",
         "Category",
@@ -73,8 +85,9 @@ pub fn export_schedule_csv<W: std::io::Write>(
     ])
     .map_err(|e| format!("{e}"))?;
 
-    for entry in entries {
+    for (i, entry) in entries.iter().enumerate() {
         wtr.write_record([
+            &(i + 1).to_string(),
             &entry.botanical_name,
             &entry.common_name,
             entry.category.as_str(),
@@ -89,4 +102,69 @@ pub fn export_schedule_csv<W: std::io::Write>(
 
     wtr.flush().map_err(|e| format!("{e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entity::{CircleData, Entity, Geometry};
+    use crate::garden::plant::PlantData;
+    use glam::Vec2;
+
+    fn plant_entity(botanical: &str, category: Category) -> Entity {
+        let data = PlantData {
+            plant_id: uuid::Uuid::new_v4(),
+            botanical_name: botanical.into(),
+            common_name: botanical.into(),
+            category,
+            height_mm: 1000,
+            spread_mm: 800,
+            colour_code: "#4CAF50".into(),
+            flower_colour: String::new(),
+            foliage_colour: String::new(),
+            evergreen: false,
+            notes: String::new(),
+        };
+        Entity::new(
+            botanical,
+            Geometry::Circle(CircleData { center: Vec2::ZERO, radius: 400.0 }),
+            DomainData::Plant(data),
+        )
+    }
+
+    #[test]
+    fn test_schedule_numbers_follow_schedule_order() {
+        // Insertion order deliberately scrambled; numbering must follow
+        // schedule order (category, then botanical name), not insertion.
+        let entities = vec![
+            plant_entity("Zebra grass", Category::Grass),
+            plant_entity("Rosa rugosa", Category::Shrub),
+            plant_entity("Acer palmatum", Category::Tree),
+            plant_entity("Rosa rugosa", Category::Shrub),
+        ];
+
+        let schedule = generate_schedule(&entities);
+        let numbers = schedule_numbers(&entities);
+
+        assert_eq!(numbers.len(), 3);
+        for (i, entry) in schedule.iter().enumerate() {
+            assert_eq!(numbers[&entry.botanical_name], i + 1);
+        }
+    }
+
+    #[test]
+    fn test_schedule_csv_has_row_numbers() {
+        let entities = vec![
+            plant_entity("Rosa rugosa", Category::Shrub),
+            plant_entity("Acer palmatum", Category::Tree),
+        ];
+        let schedule = generate_schedule(&entities);
+        let mut buf = Vec::new();
+        export_schedule_csv(&schedule, &mut buf).unwrap();
+        let csv = String::from_utf8(buf).unwrap();
+        let mut lines = csv.lines();
+        assert!(lines.next().unwrap().starts_with("#,Botanical Name"));
+        assert!(lines.next().unwrap().starts_with("1,"));
+        assert!(lines.next().unwrap().starts_with("2,"));
+    }
 }
