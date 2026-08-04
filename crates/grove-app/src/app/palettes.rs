@@ -109,6 +109,7 @@ impl GroveApp {
         if let Some(ann_action) = annotation_action {
             match ann_action {
                 crate::panels::annotation_palette::AnnotationPaletteAction::Updated(new_drawing) => {
+                    let new_drawing = *new_drawing;
                     if let WorkspaceMode::Drawing(id) = self.workspace_mode {
                         if let Some(old) = self.project.find_drawing(id) {
                             let old_clone = old.clone();

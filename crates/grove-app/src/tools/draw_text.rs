@@ -82,10 +82,6 @@ impl DrawTextTool {
 }
 
 impl Tool for DrawTextTool {
-    fn name(&self) -> &str {
-        "Text"
-    }
-
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
 
     fn on_mouse_down(&mut self, pos: Vec2, ctx: &ToolContext) -> ToolResult {

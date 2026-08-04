@@ -42,6 +42,7 @@ impl GroveApp {
         self.draw_tool = None;
         self.active_tool_type = ActiveToolType::Select;
         self.bg_renderer.clear();
+        self.entourage_renderer.clear();
         self.calibrate_state = None;
     }
 
@@ -89,6 +90,7 @@ impl GroveApp {
                 self.draw_tool = None;
                 self.active_tool_type = ActiveToolType::Select;
                 self.bg_renderer.clear();
+                self.entourage_renderer.clear();
                 self.calibrate_state = None;
                 self.add_to_recent(&path);
                 self.file_path = Some(path);

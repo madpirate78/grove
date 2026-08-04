@@ -102,7 +102,7 @@ pub fn apply_colour_mode(pixels: &mut [u8], mode: &ColourMode) {
         }
         ColourMode::Tinted(tint) => {
             for chunk in pixels.chunks_exact_mut(4) {
-                let grey = ((chunk[0] as u16 * 77 + chunk[1] as u16 * 150 + chunk[2] as u16 * 29) >> 8) as u16;
+                let grey = (chunk[0] as u16 * 77 + chunk[1] as u16 * 150 + chunk[2] as u16 * 29) >> 8;
                 chunk[0] = ((grey * tint[0] as u16) >> 8) as u8;
                 chunk[1] = ((grey * tint[1] as u16) >> 8) as u8;
                 chunk[2] = ((grey * tint[2] as u16) >> 8) as u8;

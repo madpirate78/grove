@@ -125,8 +125,7 @@ impl EntourageLibrary {
 
                 let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
                 let name = path.file_stem().unwrap_or_default().to_string_lossy()
-                    .replace('_', " ")
-                    .replace('-', " ");
+                    .replace(['_', '-'], " ");
                 // Title-case the name
                 let name = name.split_whitespace()
                     .map(|w| {

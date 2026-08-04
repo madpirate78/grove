@@ -56,7 +56,6 @@ impl Canvas {
         self.draw_origin(&painter, rect);
 
         CanvasResponse {
-            rect,
             response,
             painter,
         }
@@ -444,12 +443,6 @@ impl Canvas {
         nice * magnitude
     }
 
-    /// Get the current cursor position in world coordinates, if hovering.
-    pub fn cursor_world_pos(&self, response: &egui::Response) -> Option<Vec2> {
-        response
-            .hover_pos()
-            .map(|p| self.viewport.screen_to_world(p))
-    }
 }
 
 impl Default for Canvas {
@@ -460,7 +453,6 @@ impl Default for Canvas {
 
 /// Response from Canvas::show containing what the app needs.
 pub struct CanvasResponse {
-    pub rect: Rect,
     pub response: egui::Response,
     pub painter: egui::Painter,
 }

@@ -137,10 +137,6 @@ impl EntourageRenderer {
         rendered
     }
 
-    pub fn remove(&mut self, id: Uuid) {
-        self.textures.remove(&id);
-    }
-
     pub fn clear(&mut self) {
         self.textures.clear();
     }

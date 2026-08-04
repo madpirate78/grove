@@ -65,19 +65,9 @@ impl ViewTransform {
         self.offset = center - world_pos * self.zoom;
     }
 
-    /// Current scale factor: world units per screen pixel.
-    pub fn world_per_pixel(&self) -> f32 {
-        1.0 / self.zoom
-    }
-
     /// Convert a world-space distance to screen pixels.
     pub fn world_to_screen_distance(&self, world_dist: f32) -> f32 {
         world_dist * self.zoom
-    }
-
-    /// Convert a screen-space distance to world units.
-    pub fn screen_to_world_distance(&self, screen_dist: f32) -> f32 {
-        screen_dist / self.zoom
     }
 
     /// Fit the view to show a world-space rectangle.

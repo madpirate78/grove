@@ -99,10 +99,6 @@ fn angle_between_ccw(start: f32, end: f32, test: f32) -> bool {
 }
 
 impl Tool for DrawArcTool {
-    fn name(&self) -> &str {
-        "Arc"
-    }
-
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
 
     fn on_mouse_down(&mut self, pos: Vec2, ctx: &ToolContext) -> ToolResult {

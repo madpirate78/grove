@@ -25,10 +25,8 @@ pub struct ToolContext<'a> {
     pub entities: &'a [Entity],
     pub snap_config: &'a SnapConfig,
     pub shift_held: bool,
-    pub ctrl_held: bool,
     pub active_layer_id: uuid::Uuid,
     pub viewport_zoom: f32,
-    pub selected_ids: &'a [uuid::Uuid],
     /// Activated smart snap points for extension line snapping.
     pub smart_points: &'a [Vec2],
 }
@@ -47,7 +45,6 @@ pub enum ToolResult {
 
 /// The interactive tool protocol.
 pub trait Tool {
-    fn name(&self) -> &str;
     /// Downcast support for runtime tool mutation (e.g. updating plant selection).
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
     /// Downcast support for runtime tool inspection.

@@ -1,4 +1,5 @@
 pub mod dimension;
+#[allow(clippy::module_inception)]
 pub mod drawing;
 pub mod layout;
 pub mod legend;

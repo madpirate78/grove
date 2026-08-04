@@ -544,7 +544,7 @@ pub fn extract_polyline_section(
 
     if !closed {
         // Open polyline: always go from earlier to later
-        let (s_seg, s_t, s_pt, e_seg, e_t, e_pt) =
+        let (s_seg, _s_t, s_pt, e_seg, e_t, e_pt) =
             if (start_seg, ordered_float(start_t)) <= (end_seg, ordered_float(end_t)) {
                 (start_seg, start_t, start_pt, end_seg, end_t, end_pt)
             } else {
@@ -555,10 +555,8 @@ pub fn extract_polyline_section(
         // Add interior vertices between start and end segments
         let first_interior = s_seg + 1;
         let last_interior = if e_t > 0.0 { e_seg + 1 } else { e_seg };
-        for i in first_interior..last_interior {
-            if i < n {
-                result.push(vertices[i]);
-            }
+        for &v in vertices.iter().take(last_interior).skip(first_interior) {
+            result.push(v);
         }
         if (e_pt - *result.last().unwrap()).length() > 0.01 {
             result.push(e_pt);

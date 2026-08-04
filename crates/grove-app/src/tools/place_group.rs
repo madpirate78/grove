@@ -229,10 +229,6 @@ impl PlaceGroupTool {
 }
 
 impl Tool for PlaceGroupTool {
-    fn name(&self) -> &str {
-        "Place Group"
-    }
-
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
 
     fn on_mouse_down(&mut self, pos: Vec2, ctx: &ToolContext) -> ToolResult {

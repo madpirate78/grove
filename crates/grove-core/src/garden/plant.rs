@@ -42,7 +42,7 @@ impl Category {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "perennial" => Some(Category::Perennial),
             "shrub" => Some(Category::Shrub),

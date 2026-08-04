@@ -114,17 +114,13 @@ impl GroveApp {
                                 self.layer_rename = Some((i, layer_name.clone()));
                                 ui.close_menu();
                             }
-                            if i > 0 {
-                                if ui.button("Move Up").clicked() {
-                                    move_up_idx = Some(i);
-                                    ui.close_menu();
-                                }
+                            if i > 0 && ui.button("Move Up").clicked() {
+                                move_up_idx = Some(i);
+                                ui.close_menu();
                             }
-                            if i < layer_count - 1 {
-                                if ui.button("Move Down").clicked() {
-                                    move_down_idx = Some(i);
-                                    ui.close_menu();
-                                }
+                            if i < layer_count - 1 && ui.button("Move Down").clicked() {
+                                move_down_idx = Some(i);
+                                ui.close_menu();
                             }
                             if layer_count > 1 {
                                 ui.separator();
@@ -317,7 +313,7 @@ impl GroveApp {
                         if self
                             .calibrate_state
                             .as_ref()
-                            .map_or(false, |c| c.image_id == id)
+                            .is_some_and(|c| c.image_id == id)
                         {
                             self.calibrate_state = None;
                         }
@@ -362,6 +358,7 @@ impl GroveApp {
         if let Some(dp_action) = drawing_action {
             match dp_action {
                 crate::panels::drawing_properties::DrawingPropertiesAction::Updated(new_drawing) => {
+                    let new_drawing = *new_drawing;
                     if let WorkspaceMode::Drawing(id) = self.workspace_mode {
                         if let Some(old) = self.project.find_drawing(id) {
                             let old_clone = old.clone();

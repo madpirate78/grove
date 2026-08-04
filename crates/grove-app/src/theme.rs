@@ -12,7 +12,6 @@ impl ThemeColours {
     pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(150, 150, 158);
     pub const TEXT_DIM: Color32 = Color32::from_rgb(100, 100, 108);
     pub const ACCENT: Color32 = Color32::from_rgb(70, 130, 210);
-    pub const ACCENT_HOVER: Color32 = Color32::from_rgb(90, 150, 230);
     pub const GRID_MAJOR: Color32 = Color32::from_rgba_premultiplied(60, 60, 65, 80);
     pub const GRID_MINOR: Color32 = Color32::from_rgba_premultiplied(45, 45, 50, 60);
     pub const SELECTION: Color32 = Color32::from_rgb(70, 160, 255);
@@ -23,10 +22,10 @@ impl ThemeColours {
 
 /// Apply the Grove dark theme to egui.
 pub fn apply_theme(ctx: &egui::Context) {
-    let mut style = Style::default();
-
-    // Dark visuals
-    style.visuals = Visuals::dark();
+    let mut style = Style {
+        visuals: Visuals::dark(),
+        ..Style::default()
+    };
     style.visuals.panel_fill = ThemeColours::BG_DARK;
     style.visuals.window_fill = ThemeColours::BG_PANEL;
     style.visuals.extreme_bg_color = ThemeColours::BG_DARKEST;

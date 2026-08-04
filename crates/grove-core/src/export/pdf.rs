@@ -40,9 +40,11 @@ pub fn export_drawing_pdf_bytes(
     // Without this, all text is silently dropped from the PDF.
     let mut fontdb = usvg::fontdb::Database::new();
     fontdb.load_system_fonts();
-    let mut opts = usvg::Options::default();
-    opts.font_family = "sans-serif".to_owned();
-    opts.fontdb = Arc::new(fontdb);
+    let opts = usvg::Options {
+        font_family: "sans-serif".to_owned(),
+        fontdb: Arc::new(fontdb),
+        ..Default::default()
+    };
 
     let tree = usvg::Tree::from_str(&svg_string, &opts)?;
     let pdf_bytes = svg2pdf::to_pdf(

@@ -113,7 +113,7 @@ pub fn export_svg(project: &Project, options: &SvgExportOptions) -> Result<Strin
             .push(entity);
     }
 
-    for (_layer_id, (layer_name, layer_entities)) in &layer_groups {
+    for (layer_name, layer_entities) in layer_groups.values() {
         let mut group = element::Group::new().set("id", layer_name.as_str());
         for entity in layer_entities {
             // White strokes are invisible on white paper — use black instead
@@ -147,7 +147,7 @@ pub fn export_svg_to_file(
 pub fn export_drawing_svg(
     project: &Project,
     drawing: &Drawing,
-    options: &SvgExportOptions,
+    _options: &SvgExportOptions,
 ) -> Result<String, String> {
     let (paper_w, paper_h) = drawing.paper_dimensions_mm();
 

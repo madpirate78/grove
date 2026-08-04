@@ -38,10 +38,6 @@ pub struct ModifyTool {
 }
 
 impl ModifyTool {
-    pub fn mode(&self) -> ModifyMode {
-        self.mode
-    }
-
     pub fn new(mode: ModifyMode, target_ids: Vec<Uuid>, entities: &[Entity]) -> Self {
         let original_geometries: Vec<_> = target_ids
             .iter()
@@ -257,14 +253,6 @@ enum TransformValue {
 }
 
 impl Tool for ModifyTool {
-    fn name(&self) -> &str {
-        match self.mode {
-            ModifyMode::Move => "Move",
-            ModifyMode::Rotate => "Rotate",
-            ModifyMode::Scale => "Scale",
-        }
-    }
-
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }

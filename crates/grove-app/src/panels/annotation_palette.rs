@@ -3,7 +3,7 @@ use grove_core::drawing::drawing::Drawing;
 
 /// Actions returned by the annotation palette for the app to handle.
 pub enum AnnotationPaletteAction {
-    Updated(Drawing),
+    Updated(Box<Drawing>),
     StartAnnotationMode,
     SetLeader(uuid::Uuid),
 }
@@ -80,7 +80,7 @@ pub fn draw_annotation_palette(
     }
 
     if changed && action.is_none() {
-        action = Some(AnnotationPaletteAction::Updated(drawing));
+        action = Some(AnnotationPaletteAction::Updated(Box::new(drawing)));
     }
 
     action

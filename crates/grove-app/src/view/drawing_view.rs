@@ -50,7 +50,6 @@ pub struct DrawingInteraction {
 /// Action produced by the drawing view for the app to process.
 pub enum DrawingViewAction {
     UpdatedViewport(uuid::Uuid, DrawingViewport),
-    CreatedViewport(DrawingViewport),
     SelectViewport(Option<uuid::Uuid>),
     CreatedAnnotation(DrawingAnnotation),
     UpdatedAnnotation(uuid::Uuid, DrawingAnnotation),
@@ -128,7 +127,7 @@ pub fn draw_drawing_view(
                     let fill = Color32::from_rgba_unmultiplied(
                         resolved[0], resolved[1], resolved[2], 30,
                     );
-                    render_width_shape(&clipped, &centerline, w, fill, stroke, &to_screen);
+                    render_width_shape(&clipped, &centerline, w, fill, stroke, to_screen);
                     continue;
                 }
             }
@@ -495,6 +494,7 @@ fn draw_title_block_preview(
 
 // --- Entity rendering ---
 
+#[allow(clippy::too_many_arguments)]
 fn draw_entity_simple(
     painter: &egui::Painter,
     geometry: &Geometry,
@@ -654,7 +654,7 @@ fn draw_entity_simple(
 
 // --- Plant style rendering ---
 
-fn plant_label<'a>(domain: &'a grove_core::entity::DomainData) -> Option<&'a str> {
+fn plant_label(domain: &grove_core::entity::DomainData) -> Option<&str> {
     if let grove_core::entity::DomainData::Plant(ref pd) = domain {
         if !pd.common_name.is_empty() {
             Some(pd.common_name.as_str())

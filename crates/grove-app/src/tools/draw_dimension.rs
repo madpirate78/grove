@@ -116,10 +116,6 @@ impl DrawDimensionTool {
 }
 
 impl Tool for DrawDimensionTool {
-    fn name(&self) -> &str {
-        "Dimension"
-    }
-
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
 
     fn on_mouse_down(&mut self, pos: Vec2, ctx: &ToolContext) -> ToolResult {

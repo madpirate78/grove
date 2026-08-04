@@ -253,15 +253,6 @@ impl PolygonDrawer {
         self.curve_mode = !self.curve_mode;
     }
 
-    /// Check if `pos` is near the first anchor (for close-on-first-node detection).
-    pub fn is_near_first_anchor(&self, pos: Vec2, tolerance: f32) -> bool {
-        if let Some(first) = self.anchors.first() {
-            (pos - first.point).length() <= tolerance
-        } else {
-            false
-        }
-    }
-
     /// Build a preview BezierPathData including a temporary segment to cursor.
     pub fn preview_path(&self) -> BezierPathData {
         let mut anchors = self.anchors.clone();
@@ -538,14 +529,13 @@ impl PolygonDrawer {
         let pick_tolerance = 10.0 / ctx.viewport_zoom;
 
         if let Some(ref mut state) = self.edge_trace {
-            if state.start.is_some() {
+            if let Some(ref start) = state.start {
                 // Second click: project onto cached edge and extract section
-                let (proj, seg, t) = closest_point_on_polyline(
+                let (_, seg, t) = closest_point_on_polyline(
                     pos,
                     &state.edge_vertices,
                     state.edge_closed,
                 );
-                let start = state.start.as_ref().unwrap();
                 let section = extract_polyline_section(
                     &state.edge_vertices,
                     state.edge_closed,
@@ -632,14 +622,13 @@ impl PolygonDrawer {
         let pick_tolerance = 10.0 / ctx.viewport_zoom;
 
         if let Some(ref mut state) = self.edge_trace {
-            if state.start.is_some() {
+            if let Some(ref start) = state.start {
                 // Project cursor onto cached edge for preview
                 let (_, seg, t) = closest_point_on_polyline(
                     pos,
                     &state.edge_vertices,
                     state.edge_closed,
                 );
-                let start = state.start.as_ref().unwrap();
                 state.preview = extract_polyline_section(
                     &state.edge_vertices,
                     state.edge_closed,
@@ -685,7 +674,7 @@ impl PolygonDrawer {
         // Hover highlight (before first click)
         if self.edge_trace_active {
             if let Some(ref state) = self.edge_trace {
-                if state.start.is_some() {
+                if let Some(ref start) = state.start {
                     // Draw traced section preview
                     if state.preview.len() >= 2 {
                         let screen_pts: Vec<egui::Pos2> = state
@@ -699,8 +688,7 @@ impl PolygonDrawer {
                     }
 
                     // Start marker
-                    let start_screen =
-                        viewport.world_to_screen(state.start.as_ref().unwrap().position);
+                    let start_screen = viewport.world_to_screen(start.position);
                     painter.circle_filled(start_screen, 4.0, cyan);
 
                     // End marker at last preview point

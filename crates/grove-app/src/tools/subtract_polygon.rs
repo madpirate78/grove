@@ -62,10 +62,9 @@ impl SubtractPolygonTool {
             CutoutShape::Rectangle => self.rect_first_corner,
             CutoutShape::Polygon => return self.drawer.effective_pos(raw, ctx),
         };
-        let constrained = if ctx.shift_held && anchor.is_some() {
-            ortho_constrain(anchor.unwrap(), raw)
-        } else {
-            raw
+        let constrained = match anchor {
+            Some(a) if ctx.shift_held => ortho_constrain(a, raw),
+            _ => raw,
         };
         if ctx.snap_config.enabled {
             let mut segs = Vec::new();
@@ -134,10 +133,6 @@ impl SubtractPolygonTool {
 }
 
 impl Tool for SubtractPolygonTool {
-    fn name(&self) -> &str {
-        "Subtract"
-    }
-
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }

@@ -113,11 +113,6 @@ impl GroveApp {
                                         }
                                     }
                                 }
-                                crate::view::drawing_view::DrawingViewAction::CreatedViewport(new_vp) => {
-                                    if let Some(d) = self.project.find_drawing_mut(drawing_id) {
-                                        d.viewports.push(new_vp);
-                                    }
-                                }
                                 crate::view::drawing_view::DrawingViewAction::SelectViewport(vp_id) => {
                                     self.drawing_interaction.selected_viewport = vp_id;
                                 }
@@ -358,7 +353,7 @@ impl GroveApp {
                     }
 
                     // Suppress normal tool input while waiting for clicks
-                    let suppress = self.calibrate_state.as_ref().map_or(false, |c| {
+                    let suppress = self.calibrate_state.as_ref().is_some_and(|c| {
                         match &c.mode {
                             AdjustMode::CalibrateScale { awaiting_distance, .. } => !awaiting_distance,
                             AdjustMode::AlignHorizontal { .. } => true,
@@ -500,19 +495,15 @@ impl GroveApp {
                     }
                 }
 
-                // Copy selected IDs to avoid borrow conflict with selection mutations
-                let selected_ids_copy: Vec<uuid::Uuid> = self.selection.ids.clone();
                 let smart_positions: Vec<glam::Vec2> = self.smart_points.iter().map(|sp| sp.position).collect();
 
-                // Build tool context from copies (avoids borrow issues)
+                // Borrows entities; smart_points copied out so tools can't alias self
                 let tool_ctx = ToolContext {
                     entities: &self.project.entities,
                     snap_config: &self.snap_config,
                     shift_held: shift,
-                    ctrl_held: ctrl,
                     active_layer_id: self.project.layers.active_layer_id,
                     viewport_zoom: self.canvas.viewport.zoom,
-                    selected_ids: &selected_ids_copy,
                     smart_points: &smart_positions,
                 };
 
@@ -583,19 +574,9 @@ impl GroveApp {
                     }
 
                     // Forward generic key presses to tool
-                    if matches!(result, ToolResult::Continue) {
-                        if ctx.input(|i| i.key_pressed(egui::Key::C)) {
-                            result = tool.on_key_pressed(egui::Key::C);
-                        }
-                    }
-                    if matches!(result, ToolResult::Continue) {
-                        if ctx.input(|i| i.key_pressed(egui::Key::E)) {
-                            result = tool.on_key_pressed(egui::Key::E);
-                        }
-                    }
-                    if matches!(result, ToolResult::Continue) {
-                        if ctx.input(|i| i.key_pressed(egui::Key::Tab)) {
-                            result = tool.on_key_pressed(egui::Key::Tab);
+                    for key in [egui::Key::C, egui::Key::E, egui::Key::Tab] {
+                        if matches!(result, ToolResult::Continue) && ctx.input(|i| i.key_pressed(key)) {
+                            result = tool.on_key_pressed(key);
                         }
                     }
                     if matches!(result, ToolResult::Continue)
@@ -607,7 +588,6 @@ impl GroveApp {
 
                     // Put tool back before handling result (which may clear it)
                     self.draw_tool = Some(tool);
-                    drop(tool_ctx);
                     self.handle_tool_result(result);
                     return;
                 }
@@ -710,7 +690,6 @@ impl GroveApp {
 
                     // Space: return to Select mode (works from any tool)
                     if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
-                        drop(tool_ctx);
                         self.switch_tool(ActiveToolType::Select);
                         return;
                     }
@@ -718,22 +697,18 @@ impl GroveApp {
                     // Modification shortcuts (Blender-style, when selection is non-empty)
                     if !self.selection.is_empty() && !ctrl {
                         if ctx.input(|i| i.key_pressed(egui::Key::G)) {
-                            drop(tool_ctx);
                             self.activate_modify_tool(crate::tools::modify::ModifyMode::Move);
                             return;
                         }
                         if ctx.input(|i| i.key_pressed(egui::Key::R)) {
-                            drop(tool_ctx);
                             self.activate_modify_tool(crate::tools::modify::ModifyMode::Rotate);
                             return;
                         }
                         if ctx.input(|i| i.key_pressed(egui::Key::S)) {
-                            drop(tool_ctx);
                             self.activate_modify_tool(crate::tools::modify::ModifyMode::Scale);
                             return;
                         }
                         if shift && ctx.input(|i| i.key_pressed(egui::Key::D)) {
-                            drop(tool_ctx);
                             self.activate_array_tool();
                             return;
                         }
@@ -745,7 +720,6 @@ impl GroveApp {
                                         || matches!(&e.geometry, Geometry::BezierPath(bp) if bp.closed)
                                 }).unwrap_or(false);
                                 if is_polygon {
-                                    drop(tool_ctx);
                                     let mut tool = crate::tools::subtract_polygon::SubtractPolygonTool::new(sel_id);
                                     tool.cutout_shape = match self.shape_sub_tool {
                                         ShapeTool::Circle => crate::tools::subtract_polygon::CutoutShape::Circle,
@@ -777,7 +751,6 @@ impl GroveApp {
                         };
                         if let Some(d) = delta {
                             let ids: Vec<_> = self.selection.ids.clone();
-                            drop(tool_ctx);
                             let commands: Vec<Box<dyn grove_core::commands::Command>> = ids
                                 .iter()
                                 .map(|&id| -> Box<dyn grove_core::commands::Command> {
@@ -800,7 +773,6 @@ impl GroveApp {
                             || (!ctrl && i.key_pressed(egui::Key::X))
                     }) {
                         let ids: Vec<_> = self.selection.ids.clone();
-                        drop(tool_ctx);
                         if !ids.is_empty() {
                             let commands: Vec<Box<dyn grove_core::commands::Command>> = ids
                                 .iter()

@@ -53,7 +53,7 @@ impl PlantDatabase {
             let common_name = record.get(1).unwrap_or("").to_string();
             let category = record
                 .get(2)
-                .and_then(Category::from_str)
+                .and_then(Category::parse)
                 .unwrap_or(Category::Perennial);
             let height_mm = record
                 .get(3)

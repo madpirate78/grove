@@ -5,7 +5,7 @@ use grove_core::entity::Entity;
 use grove_core::layer::LayerManager;
 
 pub enum DrawingPropertiesAction {
-    Updated(Drawing),
+    Updated(Box<Drawing>),
     ExportSvg,
     ExportPdf,
     BackToModel,
@@ -238,11 +238,9 @@ pub fn draw_drawing_properties(
                             }
                             changed = true;
                         }
-                        if override_vis.is_some() {
-                            if ui.small_button("reset").clicked() {
-                                vp.layer_overrides.visibility.remove(&layer.id);
-                                changed = true;
-                            }
+                        if override_vis.is_some() && ui.small_button("reset").clicked() {
+                            vp.layer_overrides.visibility.remove(&layer.id);
+                            changed = true;
                         }
                     });
                 }
@@ -319,7 +317,7 @@ pub fn draw_drawing_properties(
     }); // end ScrollArea
 
     if changed && action.is_none() {
-        action = Some(DrawingPropertiesAction::Updated(drawing));
+        action = Some(DrawingPropertiesAction::Updated(Box::new(drawing)));
     }
 
     action
@@ -363,5 +361,5 @@ fn nice_scale(raw: f32) -> u32 {
         }
     }
     // If larger than all nice scales, round up to nearest 50
-    ((raw_u + 49) / 50) * 50
+    raw_u.div_ceil(50) * 50
 }

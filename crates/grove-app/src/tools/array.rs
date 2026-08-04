@@ -67,10 +67,6 @@ impl LinearArrayTool {
 }
 
 impl Tool for LinearArrayTool {
-    fn name(&self) -> &str {
-        "Linear Array"
-    }
-
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }

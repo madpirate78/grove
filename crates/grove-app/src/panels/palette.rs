@@ -4,20 +4,11 @@ use grove_core::garden::colour::category_colour;
 use grove_core::garden::database::PlantDatabase;
 
 /// State for the plant palette panel.
+#[derive(Default)]
 pub struct PaletteState {
     pub search_query: String,
     pub selected_category: Option<Category>,
     pub selected_plant_index: Option<usize>,
-}
-
-impl Default for PaletteState {
-    fn default() -> Self {
-        Self {
-            search_query: String::new(),
-            selected_category: None,
-            selected_plant_index: None,
-        }
-    }
 }
 
 /// Draw the plant palette panel. Returns the currently selected plant (if any changed).

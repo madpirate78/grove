@@ -14,7 +14,7 @@ use grove_core::storage;
 
 use crate::panels::palette::PaletteState;
 use crate::theme::{self, ThemeColours};
-use crate::tools::select::{SelectTool, Selection};
+use crate::tools::select::Selection;
 use crate::tools::{Tool, ToolContext, ToolResult};
 use crate::view::background::BackgroundImageRenderer;
 use crate::view::canvas::Canvas;
@@ -237,7 +237,6 @@ pub struct GroveApp {
     pub active_tool_type: ActiveToolType,
     pub tool_mode: ToolMode,
     pub shape_sub_tool: ShapeTool,
-    pub select_tool: SelectTool,
     pub draw_tool: Option<Box<dyn Tool>>,
 
     pub cursor_world_pos: Option<glam::Vec2>,
@@ -344,7 +343,6 @@ impl GroveApp {
             active_tool_type: ActiveToolType::Select,
             tool_mode: ToolMode::Select,
             shape_sub_tool: ShapeTool::Line,
-            select_tool: SelectTool::new(),
             draw_tool: None,
             cursor_world_pos: None,
             snap_label: None,
@@ -580,7 +578,7 @@ impl GroveApp {
             ToolMode::Hardscape => {
                 use crate::tools::place_hardscape::ShapeOverride;
                 match shape {
-                    ShapeTool::Line => matches!(hardscape_override, None | Some(ShapeOverride::Line)),
+                    ShapeTool::Line => hardscape_override.is_none(),
                     ShapeTool::Circle => hardscape_override == Some(ShapeOverride::Circle),
                     ShapeTool::Rect => hardscape_override == Some(ShapeOverride::Rectangle),
                     _ => false,

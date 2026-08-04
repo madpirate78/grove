@@ -119,7 +119,6 @@ pub enum DrawingMode {
 /// Shape override for area types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShapeOverride {
-    Line,
     Circle,
     Rectangle,
 }
@@ -226,7 +225,6 @@ impl PlaceHardscapeTool {
         if let Some(ovr) = self.shape_override {
             if base == DrawingMode::Polygon {
                 return match ovr {
-                    ShapeOverride::Line => DrawingMode::Polygon,
                     ShapeOverride::Circle => DrawingMode::Circle,
                     ShapeOverride::Rectangle => DrawingMode::Rectangle,
                 };
@@ -252,10 +250,9 @@ impl PlaceHardscapeTool {
     }
 
     fn effective_pos_rect(&self, raw: Vec2, ctx: &ToolContext) -> Vec2 {
-        let constrained = if ctx.shift_held && self.first_corner.is_some() {
-            ortho_constrain(self.first_corner.unwrap(), raw)
-        } else {
-            raw
+        let constrained = match self.first_corner {
+            Some(fc) if ctx.shift_held => ortho_constrain(fc, raw),
+            _ => raw,
         };
         if ctx.snap_config.enabled {
             let (segs, centers) = self.snap_data_rect(ctx);
@@ -439,10 +436,6 @@ impl PlaceHardscapeTool {
 // ---------------------------------------------------------------------------
 
 impl Tool for PlaceHardscapeTool {
-    fn name(&self) -> &str {
-        "Hardscape"
-    }
-
     fn as_any_ref(&self) -> &dyn std::any::Any { self }
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -505,10 +498,9 @@ impl Tool for PlaceHardscapeTool {
                 self.current_pos = effective;
 
                 if ctx.snap_config.enabled {
-                    let constrained = if ctx.shift_held && self.first_corner.is_some() {
-                        ortho_constrain(self.first_corner.unwrap(), pos)
-                    } else {
-                        pos
+                    let constrained = match self.first_corner {
+                        Some(fc) if ctx.shift_held => ortho_constrain(fc, pos),
+                        _ => pos,
                     };
                     let (segments, centers) = self.snap_data_rect(ctx);
                     let mut candidates = snap::snap_points(constrained, &segments, &centers, ctx.snap_config);
