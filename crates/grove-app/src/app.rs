@@ -22,6 +22,7 @@ use crate::view::canvas::Canvas;
 mod bezier_edit;
 mod canvas_panel;
 mod edit_ops;
+mod estimate;
 mod file_ops;
 mod menu_bar;
 mod palettes;
@@ -285,6 +286,10 @@ pub struct GroveApp {
     /// The drawing ID we last fit-to-page for (so we auto-fit on first entry).
     drawing_viewport_fitted_for: Option<uuid::Uuid>,
 
+    // Cost estimate
+    unit_costs: grove_core::garden::estimate::UnitCosts,
+    estimate_window_open: bool,
+
     // Entourage
     entourage_library: grove_core::garden::entourage::EntourageLibrary,
     entourage_palette_state: crate::panels::entourage_palette::EntouragePaletteState,
@@ -367,6 +372,8 @@ impl GroveApp {
             drawing_interaction: crate::view::drawing_view::DrawingInteraction::default(),
             drawing_viewport: crate::view::viewport::ViewTransform::with_zoom_limits(0.5, 10.0),
             drawing_viewport_fitted_for: None,
+            unit_costs: Self::load_unit_costs(),
+            estimate_window_open: false,
             entourage_library,
             entourage_palette_state: crate::panels::entourage_palette::EntouragePaletteState::default(),
             entourage_renderer: crate::view::entourage_renderer::EntourageRenderer::new(),
@@ -740,5 +747,8 @@ impl eframe::App for GroveApp {
         self.show_left_palettes(ctx);
         self.show_right_panel(ctx);
         self.show_central_canvas(ctx);
+
+        // Floating windows go after all panels
+        self.show_estimate_window(ctx);
     }
 }

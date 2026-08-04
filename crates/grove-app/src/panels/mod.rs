@@ -1,5 +1,6 @@
 pub mod annotation_palette;
 pub mod drawing_manager;
+pub mod estimate_panel;
 pub mod drawing_properties;
 pub mod hardscape_palette;
 pub mod level_palette;

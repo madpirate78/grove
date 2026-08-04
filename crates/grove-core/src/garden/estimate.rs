@@ -96,6 +96,21 @@ impl Default for UnitCosts {
 }
 
 impl UnitCosts {
+    /// Save this profile as pretty-printed JSON (a shareable rate card).
+    pub fn save_to_file(&self, path: &std::path::Path) -> Result<(), String> {
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| format!("Serialize cost profile: {e}"))?;
+        std::fs::write(path, json).map_err(|e| format!("Write cost profile: {e}"))
+    }
+
+    /// Load a profile from a JSON rate card. Missing keys simply price as
+    /// zero, so older or partial profiles still load.
+    pub fn load_from_file(path: &std::path::Path) -> Result<Self, String> {
+        let json = std::fs::read_to_string(path)
+            .map_err(|e| format!("Read cost profile: {e}"))?;
+        serde_json::from_str(&json).map_err(|e| format!("Parse cost profile: {e}"))
+    }
+
     fn plant_rate(&self, category: Category) -> f64 {
         self.plant_each.get(category.as_str()).copied().unwrap_or(0.0)
     }
@@ -476,6 +491,18 @@ mod tests {
         assert!(csv.starts_with("Group,Item,Quantity,Unit"));
         assert!(csv.contains("Rosa rugosa"));
         assert!(csv.lines().last().unwrap().contains("Total,25.00"));
+    }
+
+    #[test]
+    fn test_unit_costs_file_roundtrip() {
+        let path = std::env::temp_dir().join(format!("grove_costs_{}.json", uuid::Uuid::new_v4()));
+        let mut costs = UnitCosts::default();
+        costs.plant_each.insert("Tree".into(), 250.0);
+        costs.save_to_file(&path).unwrap();
+        let loaded = UnitCosts::load_from_file(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+        assert_eq!(loaded.plant_each["Tree"], 250.0);
+        assert_eq!(loaded.currency, costs.currency);
     }
 
     #[test]

@@ -228,6 +228,11 @@ impl GroveApp {
                         ui.close_menu();
                     }
                     ui.separator();
+                    if ui.button("Cost Estimate…").clicked() {
+                        self.estimate_window_open = true;
+                        ui.close_menu();
+                    }
+                    ui.separator();
                     ui.colored_label(
                         ThemeColours::TEXT_DIM,
                         format!("Database: {} plants", self.plant_db.plant_count()),
@@ -274,7 +279,7 @@ impl GroveApp {
                             .map(|p| ensure_extension(p, "csv"))
                         {
                             if let Err(e) = grove_core::export::csv_export::export_estimate_csv(
-                                &self.project.entities, &path,
+                                &self.project.entities, &self.unit_costs, &path,
                             ) {
                                 log::error!("Estimate export failed: {e}");
                             }

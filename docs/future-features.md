@@ -37,7 +37,7 @@ A cost estimation system that calculates project costs from the entities in a de
 ### Suggested Phases
 
 - **Phase A — Offline bill of quantities:** DONE (2026-08-04). `garden::estimate` walks entities and produces a priced BOQ: plants counted per species (same recursion as the planting schedule, so quantities always agree), linear hardscape (walls/fences/edging/steps) measured along centerlines, area hardscape (patios/surfaces/decking/beds/pergolas/ponds) from geometry, with hole subtraction. `UnitCosts` is string-keyed + serde so Phase B rate cards are a JSON file away; seeded with rough UK installed rates and per-material multipliers. Exported via Export → Cost Estimate CSV.
-- **Phase B — Export/import cost profiles:** Let users tweak unit costs and share profiles (JSON files) so landscapers in different regions can publish their own rate cards.
+- **Phase B — Export/import cost profiles:** DONE (2026-08-04). Garden → Cost Estimate… opens a floating window with the live priced BOQ and an editable Unit Rates section (all rate maps + currency + material multipliers). Edits persist to the app config dir (`unit_costs.json`) and apply to every export. Profiles import/export as JSON rate cards via the window's buttons; importing replaces the active rates wholesale, and partial profiles price missing keys as zero.
 - **Phase C — Online feedback service:** Server component that collects actuals vs estimates and computes regional adjustments.
 
 ---
