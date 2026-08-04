@@ -1,5 +1,5 @@
 use egui::{Color32, Pos2, Rect, Stroke, Ui};
-use grove_core::drawing::drawing::{Drawing, DrawingAnnotation, DrawingViewport};
+use grove_core::drawing::drawing::{Drawing, DrawingAnnotation, DrawingViewport, PlantStyle};
 use grove_core::drawing::layout::is_layer_visible_in_viewport;
 use grove_core::entity::Geometry;
 use grove_core::garden::colour::resolve_colour;
@@ -126,14 +126,14 @@ pub fn draw_drawing_view(
             if let Some(w) = entity.domain.width_mm() {
                 if let Some(centerline) = entity.geometry.centerline_points() {
                     let fill = Color32::from_rgba_unmultiplied(
-                        entity.colour[0], entity.colour[1], entity.colour[2], 30,
+                        resolved[0], resolved[1], resolved[2], 30,
                     );
                     render_width_shape(&clipped, &centerline, w, fill, stroke, &to_screen);
                     continue;
                 }
             }
 
-            draw_entity_simple(&clipped, &entity.geometry, &entity.domain, stroke, colour, entity.colour, &to_screen, effective_scale);
+            draw_entity_simple(&clipped, &entity.geometry, &entity.domain, stroke, colour, resolved, &to_screen, effective_scale, vp.plant_style);
         }
 
         // Viewport frame
@@ -504,6 +504,7 @@ fn draw_entity_simple(
     raw_colour: [u8; 4],
     to_screen: &dyn Fn(glam::Vec2) -> Pos2,
     px_per_mm: f32,
+    plant_style: PlantStyle,
 ) {
     match geometry {
         Geometry::None => {}
@@ -538,33 +539,7 @@ fn draw_entity_simple(
             let radius_px = (edge.x - center.x).abs();
 
             if matches!(domain, grove_core::entity::DomainData::Plant(_)) {
-                // Plant rendering: filled circle with label, matching model view
-                let fill = Color32::from_rgba_unmultiplied(
-                    raw_colour[0], raw_colour[1], raw_colour[2], 60,
-                );
-                let stroke_col = Color32::from_rgba_unmultiplied(
-                    raw_colour[0], raw_colour[1], raw_colour[2], 200,
-                );
-                painter.circle_filled(center, radius_px, fill);
-                painter.circle_stroke(center, radius_px, Stroke::new(1.5, stroke_col));
-
-                if radius_px > 8.0 {
-                    if let grove_core::entity::DomainData::Plant(ref pd) = domain {
-                        let label = if !pd.common_name.is_empty() {
-                            &pd.common_name
-                        } else {
-                            &pd.botanical_name
-                        };
-                        let font_size = (radius_px * 0.35).clamp(8.0, 14.0);
-                        painter.text(
-                            center,
-                            egui::Align2::CENTER_CENTER,
-                            label,
-                            egui::FontId::proportional(font_size),
-                            Color32::from_rgba_unmultiplied(240, 240, 245, 200),
-                        );
-                    }
-                }
+                draw_plant_disc(painter, domain, center, radius_px, raw_colour, plant_style);
             } else {
                 painter.circle_stroke(center, radius_px, stroke);
             }
@@ -672,6 +647,95 @@ fn draw_entity_simple(
                     painter.text(to_screen(mid), egui::Align2::CENTER_BOTTOM,
                         format!("R{:.0}", radius), egui::FontId::proportional(dim_font), colour);
                 }
+            }
+        }
+    }
+}
+
+// --- Plant style rendering ---
+
+fn plant_label<'a>(domain: &'a grove_core::entity::DomainData) -> Option<&'a str> {
+    if let grove_core::entity::DomainData::Plant(ref pd) = domain {
+        if !pd.common_name.is_empty() {
+            Some(pd.common_name.as_str())
+        } else {
+            Some(pd.botanical_name.as_str())
+        }
+    } else {
+        None
+    }
+}
+
+fn draw_plant_disc(
+    painter: &egui::Painter,
+    domain: &grove_core::entity::DomainData,
+    center: Pos2,
+    radius_px: f32,
+    raw_colour: [u8; 4],
+    style: PlantStyle,
+) {
+    let r = raw_colour[0];
+    let g = raw_colour[1];
+    let b = raw_colour[2];
+    let fill_soft = Color32::from_rgba_unmultiplied(r, g, b, 60);
+    let stroke_col = Color32::from_rgba_unmultiplied(r, g, b, 200);
+    let label_colour = Color32::from_rgba_unmultiplied(240, 240, 245, 200);
+
+    let draw_label = |font_scale: f32, colour: Color32| {
+        if radius_px <= 8.0 {
+            return;
+        }
+        if let Some(label) = plant_label(domain) {
+            let font_size = (radius_px * font_scale).clamp(8.0, 14.0);
+            painter.text(
+                center,
+                egui::Align2::CENTER_CENTER,
+                label,
+                egui::FontId::proportional(font_size),
+                colour,
+            );
+        }
+    };
+
+    match style {
+        PlantStyle::Simple => {
+            painter.circle_filled(center, radius_px, fill_soft);
+            painter.circle_stroke(center, radius_px, Stroke::new(1.5, stroke_col));
+            draw_label(0.35, label_colour);
+        }
+        PlantStyle::Outline => {
+            painter.circle_stroke(center, radius_px, Stroke::new(1.5, stroke_col));
+            draw_label(0.35, stroke_col);
+        }
+        PlantStyle::Silhouette => {
+            let solid = Color32::from_rgba_unmultiplied(r, g, b, 230);
+            painter.circle_filled(center, radius_px, solid);
+        }
+        PlantStyle::Canopy => {
+            // Outer stroked ring + soft fill + an inner concentric ring hinting at canopy foliage.
+            painter.circle_filled(center, radius_px, fill_soft);
+            painter.circle_stroke(center, radius_px, Stroke::new(1.5, stroke_col));
+            let inner = radius_px * 0.6;
+            painter.circle_stroke(center, inner, Stroke::new(1.0, stroke_col));
+            draw_label(0.32, label_colour);
+        }
+        PlantStyle::Numbered => {
+            // Solid-enough disc + small key number (placeholder: label's first char).
+            painter.circle_filled(center, radius_px, fill_soft);
+            painter.circle_stroke(center, radius_px, Stroke::new(1.5, stroke_col));
+            if radius_px > 6.0 {
+                let key = plant_label(domain)
+                    .and_then(|s| s.chars().next())
+                    .map(|c| c.to_ascii_uppercase().to_string())
+                    .unwrap_or_else(|| "?".to_string());
+                let font_size = (radius_px * 0.8).clamp(10.0, 18.0);
+                painter.text(
+                    center,
+                    egui::Align2::CENTER_CENTER,
+                    key,
+                    egui::FontId::proportional(font_size),
+                    stroke_col,
+                );
             }
         }
     }

@@ -1,5 +1,5 @@
 use egui::Ui;
-use grove_core::drawing::drawing::{ColourMode, Drawing, DrawingViewport, RevisionStatus};
+use grove_core::drawing::drawing::{ColourMode, Drawing, DrawingViewport, PlantStyle, RevisionStatus};
 use grove_core::drawing::layout::{Orientation, PaperSize};
 use grove_core::entity::Entity;
 use grove_core::layer::LayerManager;
@@ -196,6 +196,21 @@ pub fn draw_drawing_properties(
                         for mode in ColourMode::ALL {
                             if ui.selectable_label(vp.colour_mode == *mode, mode.label()).clicked() {
                                 vp.colour_mode = *mode;
+                                changed = true;
+                            }
+                        }
+                    });
+            });
+
+            // Plant style
+            ui.horizontal(|ui| {
+                ui.label("Plants:");
+                egui::ComboBox::from_id_salt(format!("plant_style_{}", i))
+                    .selected_text(vp.plant_style.label())
+                    .show_ui(ui, |ui| {
+                        for style in PlantStyle::ALL {
+                            if ui.selectable_label(vp.plant_style == *style, style.label()).clicked() {
+                                vp.plant_style = *style;
                                 changed = true;
                             }
                         }

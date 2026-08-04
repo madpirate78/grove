@@ -34,6 +34,42 @@ impl ColourMode {
     }
 }
 
+/// How plants are drawn inside a viewport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum PlantStyle {
+    /// Filled translucent circle with label — matches model view.
+    #[default]
+    Simple,
+    /// Hollow circle with hatched/ringed canopy suggestion.
+    Canopy,
+    /// Numbered marker keyed to a legend.
+    Numbered,
+    /// Stroked outline only, no fill, with label.
+    Outline,
+    /// Solid filled disc, no label.
+    Silhouette,
+}
+
+impl PlantStyle {
+    pub const ALL: &'static [PlantStyle] = &[
+        PlantStyle::Simple,
+        PlantStyle::Canopy,
+        PlantStyle::Numbered,
+        PlantStyle::Outline,
+        PlantStyle::Silhouette,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            PlantStyle::Simple => "Simple",
+            PlantStyle::Canopy => "Canopy",
+            PlantStyle::Numbered => "Numbered",
+            PlantStyle::Outline => "Outline",
+            PlantStyle::Silhouette => "Silhouette",
+        }
+    }
+}
+
 /// A paper-space annotation with optional leader line into a viewport.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DrawingAnnotation {
@@ -98,6 +134,8 @@ pub struct DrawingViewport {
     pub layer_overrides: LayerOverrides,
     #[serde(default)]
     pub colour_mode: ColourMode,
+    #[serde(default)]
+    pub plant_style: PlantStyle,
 }
 
 impl DrawingViewport {
@@ -111,6 +149,7 @@ impl DrawingViewport {
             scale,
             layer_overrides: LayerOverrides::default(),
             colour_mode: ColourMode::Default,
+            plant_style: PlantStyle::default(),
         }
     }
 }
@@ -300,6 +339,14 @@ mod tests {
         let json = r#"{"id":"00000000-0000-0000-0000-000000000001","name":"Main","sheet_position":[20.0,20.0],"sheet_size":[400.0,300.0],"model_center":[0.0,0.0],"scale":100,"layer_overrides":{"visibility":{}}}"#;
         let vp: DrawingViewport = serde_json::from_str(json).unwrap();
         assert_eq!(vp.colour_mode, ColourMode::Default);
+    }
+
+    #[test]
+    fn test_plant_style_default_on_deserialize() {
+        // Simulate old JSON without plant_style field
+        let json = r#"{"id":"00000000-0000-0000-0000-000000000001","name":"Main","sheet_position":[20.0,20.0],"sheet_size":[400.0,300.0],"model_center":[0.0,0.0],"scale":100,"layer_overrides":{"visibility":{}}}"#;
+        let vp: DrawingViewport = serde_json::from_str(json).unwrap();
+        assert_eq!(vp.plant_style, PlantStyle::Simple);
     }
 
     #[test]

@@ -7,12 +7,13 @@ use svg::Document;
 use uuid::Uuid;
 
 use crate::drawing::dimension::DimensionData;
-use crate::drawing::drawing::Drawing;
+use crate::drawing::drawing::{Drawing, PlantStyle};
 use crate::drawing::layout::is_layer_visible_in_viewport;
 use crate::drawing::legend::{collect_legend_items, render_legend_svg};
 use crate::drawing::north_arrow::{render_north_arrow_svg, render_scale_bar_svg};
 use crate::drawing::title_block_render::render_title_block_svg;
-use crate::entity::{DomainData, Entity, Geometry};
+use crate::entity::{CircleData, DomainData, Entity, Geometry};
+use crate::garden::plant::PlantData;
 use crate::garden::colour::{resolve_colour, rgba_to_hex};
 use crate::geometry::{offset_polyline, offset_polyline_sides};
 use crate::project::Project;
@@ -123,7 +124,7 @@ pub fn export_svg(project: &Project, options: &SvgExportOptions) -> Result<Strin
             };
             let stroke_colour = rgba_to_hex(colour);
             let sw = stroke_weight_for_domain(&entity.domain);
-            if let Some(elem) = geometry_to_svg(&entity.geometry, &entity.domain, &stroke_colour, sw, &entity.name) {
+            if let Some(elem) = geometry_to_svg(&entity.geometry, &entity.domain, &stroke_colour, sw, &entity.name, PlantStyle::Simple) {
                 group = group.add(elem);
             }
         }
@@ -246,7 +247,7 @@ pub fn export_drawing_svg(
             let paper_sw = stroke_weight_for_domain(&entity.domain);
             let sw = paper_sw * vp.scale as f32;
             if let Some(elem) = geometry_to_svg(
-                &entity.geometry, &entity.domain, &stroke_colour, sw, &entity.name,
+                &entity.geometry, &entity.domain, &stroke_colour, sw, &entity.name, vp.plant_style,
             ) {
                 vp_group = vp_group.add(elem);
             }
@@ -503,12 +504,125 @@ fn width_shape_to_svg(
     Box::new(group)
 }
 
+fn plant_label(plant: &PlantData) -> String {
+    if !plant.common_name.is_empty() {
+        plant.common_name.clone()
+    } else {
+        plant.botanical_name.clone()
+    }
+}
+
+fn plant_circle_svg(
+    c: &CircleData,
+    plant: &PlantData,
+    stroke_colour: &str,
+    stroke_width: f32,
+    plant_style: PlantStyle,
+) -> element::Group {
+    // Font size in model-space mm; at 1:100 scale, 200mm → 2mm on paper
+    let font_size = (c.radius * 0.6).max(200.0);
+    let mut group = element::Group::new();
+
+    match plant_style {
+        PlantStyle::Simple => {
+            group = group.add(
+                element::Circle::new()
+                    .set("cx", c.center.x)
+                    .set("cy", c.center.y)
+                    .set("r", c.radius)
+                    .set("fill", stroke_colour)
+                    .set("fill-opacity", 0.24)
+                    .set("stroke", stroke_colour)
+                    .set("stroke-width", stroke_width),
+            );
+            group = group.add(plant_text(&plant_label(plant), c, font_size, stroke_colour));
+        }
+        PlantStyle::Outline => {
+            group = group.add(
+                element::Circle::new()
+                    .set("cx", c.center.x)
+                    .set("cy", c.center.y)
+                    .set("r", c.radius)
+                    .set("fill", "none")
+                    .set("stroke", stroke_colour)
+                    .set("stroke-width", stroke_width),
+            );
+            group = group.add(plant_text(&plant_label(plant), c, font_size, stroke_colour));
+        }
+        PlantStyle::Silhouette => {
+            group = group.add(
+                element::Circle::new()
+                    .set("cx", c.center.x)
+                    .set("cy", c.center.y)
+                    .set("r", c.radius)
+                    .set("fill", stroke_colour)
+                    .set("fill-opacity", 0.9)
+                    .set("stroke", stroke_colour)
+                    .set("stroke-width", stroke_width),
+            );
+        }
+        PlantStyle::Canopy => {
+            group = group.add(
+                element::Circle::new()
+                    .set("cx", c.center.x)
+                    .set("cy", c.center.y)
+                    .set("r", c.radius)
+                    .set("fill", stroke_colour)
+                    .set("fill-opacity", 0.18)
+                    .set("stroke", stroke_colour)
+                    .set("stroke-width", stroke_width),
+            );
+            group = group.add(
+                element::Circle::new()
+                    .set("cx", c.center.x)
+                    .set("cy", c.center.y)
+                    .set("r", c.radius * 0.6)
+                    .set("fill", "none")
+                    .set("stroke", stroke_colour)
+                    .set("stroke-width", stroke_width * 0.7),
+            );
+            group = group.add(plant_text(&plant_label(plant), c, font_size, stroke_colour));
+        }
+        PlantStyle::Numbered => {
+            group = group.add(
+                element::Circle::new()
+                    .set("cx", c.center.x)
+                    .set("cy", c.center.y)
+                    .set("r", c.radius)
+                    .set("fill", stroke_colour)
+                    .set("fill-opacity", 0.2)
+                    .set("stroke", stroke_colour)
+                    .set("stroke-width", stroke_width),
+            );
+            let key = plant_label(plant)
+                .chars()
+                .next()
+                .map(|ch| ch.to_ascii_uppercase().to_string())
+                .unwrap_or_else(|| "?".to_string());
+            group = group.add(plant_text(&key, c, font_size * 1.4, stroke_colour));
+        }
+    }
+
+    group
+}
+
+fn plant_text(text: &str, c: &CircleData, font_size: f32, stroke_colour: &str) -> element::Text {
+    element::Text::new(text.to_string())
+        .set("x", c.center.x)
+        .set("y", c.center.y)
+        .set("text-anchor", "middle")
+        .set("dominant-baseline", "central")
+        .set("font-size", font_size)
+        .set("fill", stroke_colour)
+}
+
 fn geometry_to_svg(
     geometry: &Geometry,
     domain: &DomainData,
     stroke_colour: &str,
     stroke_width: f32,
     name: &str,
+    plant_style: PlantStyle,
 ) -> Option<Box<dyn svg::Node>> {
     match geometry {
         Geometry::None => None,
@@ -613,28 +727,7 @@ fn geometry_to_svg(
         Geometry::Circle(c) => {
             // Check if this is a plant (domain-aware rendering)
             if let DomainData::Plant(ref plant) = domain {
-                let label = &plant.common_name;
-                let circle = element::Circle::new()
-                    .set("cx", c.center.x)
-                    .set("cy", c.center.y)
-                    .set("r", c.radius)
-                    .set("fill", stroke_colour)
-                    .set("fill-opacity", 0.24)
-                    .set("stroke", stroke_colour)
-                    .set("stroke-width", stroke_width);
-
-                // Font size in model-space mm; at 1:100 scale, 200mm → 2mm on paper
-                let font_size = (c.radius * 0.6).max(200.0);
-                let text = element::Text::new(label.clone())
-                    .set("x", c.center.x)
-                    .set("y", c.center.y)
-                    .set("text-anchor", "middle")
-                    .set("dominant-baseline", "central")
-                    .set("font-size", font_size)
-                    .set("fill", stroke_colour);
-
-                let group = element::Group::new().add(circle).add(text);
-                Some(Box::new(group))
+                Some(Box::new(plant_circle_svg(c, plant, stroke_colour, stroke_width, plant_style)))
             } else {
                 let circle = element::Circle::new()
                     .set("cx", c.center.x)
