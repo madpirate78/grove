@@ -8,7 +8,13 @@ as dated sections.
 
 ## [Unreleased]
 
+### Added
+- **Per-viewport plant rendering styles** — `PlantStyle` (Simple / Canopy / Numbered / Outline / Silhouette) on `DrawingViewport`, selectable in the drawing properties panel and honoured by both the drawing view and drawing SVG export. `Numbered` renders the plant's row number in the planting schedule (deterministic order: category, then botanical name), and the CSV planting schedule gained a matching `#` column so markers key into it.
+
 ### Changed
+- **Split `app.rs` (3,110 lines) into focused child modules** under `src/app/` — shortcuts, file_ops, edit_ops, menu_bar, status_bar, toolbar, palettes, right_panel, canvas_panel, bezier_edit — with `update()` reduced to a short orchestrator. Code moved verbatim; modules are children of the `app` module so private-field access is unchanged.
+- **Folded `grove-widgets` into `grove-app`** (`src/widgets.rs`); the crate was 127 lines with half of it unused. Workspace is now two crates: `grove-core` and `grove-app`.
+- **Fixed all 57 clippy warnings** — removed dead code (unused `Tool::name`, `SelectTool`, dead enum variants/fields), replaced unwrap-after-`is_some` patterns with `if let`/`match`, boxed the large `Drawing` payload in panel action enums, and wired the previously-dead entourage texture-cache purge into New/Open project (fixes a small leak).
 - **Consolidated polygon and width-shape rendering** into two shared helpers (`render_polygon_mesh`, `render_width_shape`) in `crates/grove-app/src/view/canvas.rs`, parameterised over the world→screen transform closure. Removes ~70 lines of copy-paste between `canvas.rs` (model page) and `drawing_view.rs` (drawing page), and keeps the phantom-tangent mesh-batching fix in a single implementation. Hardscape tool previews updated to use the shared helper as well.
 
 ### Fixed
