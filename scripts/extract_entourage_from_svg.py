@@ -534,7 +534,7 @@ def translate_subpath(sub: str, start_abs: tuple[float, float], dx: float, dy: f
     return " ".join(out_parts)
 
 
-def stage(input_path: Path) -> int:
+def stage(input_path: Path, cluster_gap_override: float | None = None) -> int:
     STAGING.mkdir(parents=True, exist_ok=True)
     for f in STAGING.glob("vec_*.svg"):
         f.unlink()
@@ -554,7 +554,8 @@ def stage(input_path: Path) -> int:
     subpaths = [s for s in subpaths if s.bbox[2] > s.bbox[0] and s.bbox[3] > s.bbox[1]]
     print(f"parsed {len(subpaths)} non-degenerate subpaths")
 
-    gap = max(vb_w, vb_h) * CLUSTER_GAP_FRACTION
+    gap = cluster_gap_override if cluster_gap_override is not None \
+        else max(vb_w, vb_h) * CLUSTER_GAP_FRACTION
     print(f"cluster gap: {gap:.2f} (source viewport {vb_w:g}×{vb_h:g})")
     clusters = cluster_subpaths(subpaths, gap=gap)
     # Ignore tiny clusters (noise)
@@ -695,6 +696,10 @@ def main() -> int:
     p.add_argument("--simplify", type=float, default=DEFAULT_SIMPLIFY_THRESHOLD,
                    help=f"Inkscape path-simplify threshold (0 to disable). "
                         f"Default: {DEFAULT_SIMPLIFY_THRESHOLD}")
+    p.add_argument("--gap", type=float, default=None,
+                   help="Override cluster gap in source coord units. "
+                        "Smaller = items separate more aggressively. "
+                        "Default: 1%% of the longer viewport side.")
     args = p.parse_args()
     if args.finalise:
         return finalise(simplify_threshold=args.simplify)
@@ -704,7 +709,7 @@ def main() -> int:
     if not path.exists():
         print(f"not found: {path}", file=sys.stderr)
         return 1
-    return stage(path)
+    return stage(path, cluster_gap_override=args.gap)
 
 
 if __name__ == "__main__":
