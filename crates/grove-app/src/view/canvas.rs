@@ -211,11 +211,13 @@ impl Canvas {
                                 &pd.botanical_name
                             };
                             let font_size = (screen_radius * 0.35).clamp(8.0, 14.0);
-                            painter.text(
-                                screen_center,
-                                egui::Align2::CENTER_CENTER,
+                            draw_fitted_label(
+                                painter,
                                 label,
-                                egui::FontId::proportional(font_size),
+                                screen_center,
+                                screen_radius * 1.8,
+                                font_size,
+                                7.0,
                                 Color32::from_rgba_unmultiplied(240, 240, 245, 200),
                             );
                         }
@@ -467,6 +469,41 @@ pub struct CanvasResponse {
 /// apply the cut-off, so we emit an open path with the first vertex duplicated
 /// at the end. The closure point becomes a coincident butt-cap, invisible at
 /// the 1–2px strokes we use.
+/// Draw a centred label shrunk to fit `max_width`, or skip it entirely when
+/// fitting would need a font below `min_font` — a label that small is
+/// illegible noise, and unshrunk it would overflow onto neighbouring symbols.
+pub(crate) fn draw_fitted_label(
+    painter: &egui::Painter,
+    text: &str,
+    center: Pos2,
+    max_width: f32,
+    base_font: f32,
+    min_font: f32,
+    colour: Color32,
+) {
+    let galley = painter.layout_no_wrap(
+        text.to_string(),
+        egui::FontId::proportional(base_font),
+        colour,
+    );
+    let width = galley.size().x;
+    let font = if width > max_width {
+        base_font * max_width / width
+    } else {
+        base_font
+    };
+    if font < min_font {
+        return;
+    }
+    painter.text(
+        center,
+        egui::Align2::CENTER_CENTER,
+        text,
+        egui::FontId::proportional(font),
+        colour,
+    );
+}
+
 pub(crate) fn stroke_closed_loop(painter: &egui::Painter, mut pts: Vec<Pos2>, stroke: Stroke) {
     if pts.len() < 2 {
         return;

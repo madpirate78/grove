@@ -719,11 +719,13 @@ fn draw_plant_canopy(
             &plant.botanical_name
         };
         let font_size = (radius_px * 0.32).clamp(8.0, 14.0);
-        painter.text(
-            center,
-            egui::Align2::CENTER_CENTER,
+        crate::view::canvas::draw_fitted_label(
+            painter,
             label,
-            egui::FontId::proportional(font_size),
+            center,
+            radius_px * 1.8,
+            font_size,
+            7.0,
             Color32::from_rgba_unmultiplied(240, 240, 245, 200),
         );
     }
@@ -751,12 +753,8 @@ fn draw_plant_disc(
         }
         if let Some(label) = plant_label(domain) {
             let font_size = (radius_px * font_scale).clamp(8.0, 14.0);
-            painter.text(
-                center,
-                egui::Align2::CENTER_CENTER,
-                label,
-                egui::FontId::proportional(font_size),
-                colour,
+            crate::view::canvas::draw_fitted_label(
+                painter, label, center, radius_px * 1.8, font_size, 7.0, colour,
             );
         }
     };
@@ -791,12 +789,8 @@ fn draw_plant_disc(
                     .map(|n| n.to_string())
                     .unwrap_or_else(|| "?".to_string());
                 let font_size = (radius_px * 0.8).clamp(10.0, 18.0);
-                painter.text(
-                    center,
-                    egui::Align2::CENTER_CENTER,
-                    key,
-                    egui::FontId::proportional(font_size),
-                    stroke_col,
+                crate::view::canvas::draw_fitted_label(
+                    painter, &key, center, radius_px * 1.7, font_size, 6.0, stroke_col,
                 );
             }
         }

@@ -549,7 +549,9 @@ fn plant_circle_svg(
                     .set("stroke", stroke_colour)
                     .set("stroke-width", stroke_width),
             );
-            group = group.add(plant_text(&plant_label(plant), c, font_size, stroke_colour));
+            if let Some(t) = plant_text(&plant_label(plant), c, font_size, stroke_colour) {
+                group = group.add(t);
+            }
         }
         PlantStyle::Outline => {
             group = group.add(
@@ -561,7 +563,9 @@ fn plant_circle_svg(
                     .set("stroke", stroke_colour)
                     .set("stroke-width", stroke_width),
             );
-            group = group.add(plant_text(&plant_label(plant), c, font_size, stroke_colour));
+            if let Some(t) = plant_text(&plant_label(plant), c, font_size, stroke_colour) {
+                group = group.add(t);
+            }
         }
         PlantStyle::Silhouette => {
             group = group.add(
@@ -595,7 +599,9 @@ fn plant_circle_svg(
                     .set("r", (c.radius * 0.06).max(30.0))
                     .set("fill", stroke_colour),
             );
-            group = group.add(plant_text(&plant_label(plant), c, font_size, stroke_colour));
+            if let Some(t) = plant_text(&plant_label(plant), c, font_size, stroke_colour) {
+                group = group.add(t);
+            }
         }
         PlantStyle::Numbered => {
             group = group.add(
@@ -611,21 +617,41 @@ fn plant_circle_svg(
             let key = schedule_no
                 .map(|n| n.to_string())
                 .unwrap_or_else(|| "?".to_string());
-            group = group.add(plant_text(&key, c, font_size * 1.4, stroke_colour));
+            if let Some(t) = plant_text(&key, c, font_size * 1.4, stroke_colour) {
+                group = group.add(t);
+            }
         }
     }
 
     group
 }
 
-fn plant_text(text: &str, c: &CircleData, font_size: f32, stroke_colour: &str) -> element::Text {
-    element::Text::new(text.to_string())
-        .set("x", c.center.x)
-        .set("y", c.center.y)
-        .set("text-anchor", "middle")
-        .set("dominant-baseline", "central")
-        .set("font-size", font_size)
-        .set("fill", stroke_colour)
+/// Centred plant label, shrunk to fit within the plant circle. Returns `None`
+/// when fitting would need an illegibly small font — an oversized label would
+/// overflow onto neighbouring plants.
+fn plant_text(text: &str, c: &CircleData, font_size: f32, stroke_colour: &str) -> Option<element::Text> {
+    let max_width = c.radius * 1.8;
+    // No text metrics at SVG-generation time: estimate proportional glyph
+    // width as 0.55em, the usual average for sans-serif faces.
+    let est_width = font_size * 0.55 * text.chars().count().max(1) as f32;
+    let font_size = if est_width > max_width {
+        font_size * max_width / est_width
+    } else {
+        font_size
+    };
+    // 140 model-mm ≈ 1.4mm on paper at 1:100 — smaller than that is noise
+    if font_size < 140.0 {
+        return None;
+    }
+    Some(
+        element::Text::new(text.to_string())
+            .set("x", c.center.x)
+            .set("y", c.center.y)
+            .set("text-anchor", "middle")
+            .set("dominant-baseline", "central")
+            .set("font-size", font_size)
+            .set("fill", stroke_colour),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
