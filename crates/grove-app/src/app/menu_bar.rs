@@ -3,27 +3,28 @@
 use super::*;
 
 impl GroveApp {
-    pub(super) fn show_menu_bar(&mut self, ctx: &Context) {
-        TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
+    pub(super) fn show_menu_bar(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        Panel::top("menu_bar").show(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("New Project  Ctrl+N").clicked() {
                         self.new_project();
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Open…  Ctrl+O").clicked() {
-                        ui.close_menu();
+                        ui.close();
                         self.open_file();
                     }
                     ui.separator();
                     if ui.button("Save  Ctrl+S").clicked() {
-                        ui.close_menu();
+                        ui.close();
                         if let Err(e) = self.save() {
                             log::error!("Save failed: {e}");
                         }
                     }
                     if ui.button("Save As…  Ctrl+Shift+S").clicked() {
-                        ui.close_menu();
+                        ui.close();
                         if let Err(e) = self.save_as() {
                             log::error!("Save As failed: {e}");
                         }
@@ -38,7 +39,7 @@ impl GroveApp {
                                     .unwrap_or_else(|| path.display().to_string());
                                 if ui.button(&label).on_hover_text(path.display().to_string()).clicked() {
                                     let p = path.clone();
-                                    ui.close_menu();
+                                    ui.close();
                                     self.open_path(p);
                                 }
                             }
@@ -46,7 +47,7 @@ impl GroveApp {
                     }
                     ui.separator();
                     if ui.button("Import Background Image…").clicked() {
-                        ui.close_menu();
+                        ui.close();
                         let dialog = rfd::FileDialog::new()
                             .set_title("Import Background Image")
                             .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp"]);
@@ -82,7 +83,7 @@ impl GroveApp {
                         .clicked()
                     {
                         self.history.undo(&mut self.project);
-                        ui.close_menu();
+                        ui.close();
                     }
                     let redo_label = match self.history.redo_description() {
                         Some(desc) => format!("Redo: {desc}"),
@@ -93,14 +94,14 @@ impl GroveApp {
                         .clicked()
                     {
                         self.history.redo(&mut self.project);
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Select All").clicked() {
                         for e in &self.project.entities {
                             self.selection.add(e.id);
                         }
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     let has_selection = !self.selection.is_empty();
@@ -110,28 +111,28 @@ impl GroveApp {
                         .clicked()
                     {
                         self.copy_selection_to_clipboard();
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui
                         .add_enabled(has_clipboard, egui::Button::new("Paste  Ctrl+V"))
                         .clicked()
                     {
                         self.paste_from_clipboard();
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui
                         .add_enabled(has_selection, egui::Button::new("Cut  Ctrl+X"))
                         .clicked()
                     {
                         self.cut_selection();
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui
                         .add_enabled(has_selection, egui::Button::new("Duplicate  Ctrl+D"))
                         .clicked()
                     {
                         self.duplicate_selection();
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
                 ui.menu_button("View", |ui| {
@@ -154,12 +155,12 @@ impl GroveApp {
                                 40.0,
                             );
                         }
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Reset View").clicked() {
                         self.canvas.viewport.offset = glam::Vec2::new(400.0, 300.0);
                         self.canvas.viewport.zoom = 0.5;
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     ui.checkbox(&mut self.snap_config.enabled, "Snapping");
@@ -170,52 +171,52 @@ impl GroveApp {
                 ui.menu_button("Draw", |ui| {
                     if ui.button("Line").clicked() {
                         self.switch_tool(ActiveToolType::DrawLine);
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Rectangle").clicked() {
                         self.switch_tool(ActiveToolType::DrawRect);
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Arc").clicked() {
                         self.switch_tool(ActiveToolType::DrawArc);
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Circle").clicked() {
                         self.switch_tool(ActiveToolType::DrawCircle);
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Text").clicked() {
                         self.switch_tool(ActiveToolType::Text);
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Dimension").clicked() {
                         self.switch_tool(ActiveToolType::Dimension);
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
                 ui.menu_button("Garden", |ui| {
                     if ui.button("Place Plant").clicked() {
                         self.switch_tool(ActiveToolType::PlacePlant);
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Place Group").clicked() {
                         self.switch_tool(ActiveToolType::PlaceGroup);
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Place Hardscape").clicked() {
                         self.switch_tool(ActiveToolType::PlaceHardscape);
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Place Level").clicked() {
                         self.switch_tool(ActiveToolType::PlaceLevel);
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Cost Estimate…").clicked() {
                         self.estimate_window_open = true;
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     ui.colored_label(
@@ -225,7 +226,7 @@ impl GroveApp {
                 });
                 ui.menu_button("Export", |ui| {
                     if ui.button("Export SVG...").clicked() {
-                        ui.close_menu();
+                        ui.close();
                         if let Some(path) = rfd::FileDialog::new()
                             .set_title("Export SVG")
                             .add_filter("SVG", &["svg"])
@@ -241,7 +242,7 @@ impl GroveApp {
                         }
                     }
                     if ui.button("Export Planting Schedule CSV...").clicked() {
-                        ui.close_menu();
+                        ui.close();
                         if let Some(path) = rfd::FileDialog::new()
                             .set_title("Export Planting Schedule")
                             .add_filter("CSV", &["csv"])
@@ -256,7 +257,7 @@ impl GroveApp {
                         }
                     }
                     if ui.button("Export Cost Estimate CSV...").clicked() {
-                        ui.close_menu();
+                        ui.close();
                         if let Some(path) = rfd::FileDialog::new()
                             .set_title("Export Cost Estimate")
                             .add_filter("CSV", &["csv"])
@@ -275,7 +276,7 @@ impl GroveApp {
                         if let Some(drawing) = self.project.find_drawing(*drawing_id) {
                             let label = format!("Export Drawing SVG ({})...", drawing.title);
                             if ui.button(label).clicked() {
-                                ui.close_menu();
+                                ui.close();
                                 if let Some(path) = rfd::FileDialog::new()
                                     .set_title("Export Drawing SVG")
                                     .set_file_name(format!("{}-{}.svg", drawing.full_sheet_ref(), drawing.title))
@@ -294,7 +295,7 @@ impl GroveApp {
                             // Drawing PDF export
                             let pdf_label = format!("Export Drawing PDF ({})...", drawing.title);
                             if ui.button(pdf_label).clicked() {
-                                ui.close_menu();
+                                ui.close();
                                 if let Some(path) = rfd::FileDialog::new()
                                     .set_title("Export Drawing PDF")
                                     .set_file_name(format!("{}-{}.pdf", drawing.full_sheet_ref(), drawing.title))
@@ -315,7 +316,7 @@ impl GroveApp {
                     if !self.project.drawings.is_empty() {
                         let label = format!("Export All Drawings ({})...", self.project.drawings.len());
                         if ui.button(label).clicked() {
-                            ui.close_menu();
+                            ui.close();
                             if let Some(dir) = rfd::FileDialog::new()
                                 .set_title("Export All Drawings — Choose Folder")
                                 .pick_folder()
@@ -331,7 +332,7 @@ impl GroveApp {
                         }
                     }
                     if ui.button("Export JSON...").clicked() {
-                        ui.close_menu();
+                        ui.close();
                         if let Some(path) = rfd::FileDialog::new()
                             .set_title("Export JSON")
                             .add_filter("JSON", &["json"])
@@ -362,7 +363,7 @@ impl GroveApp {
 
                 ui.menu_button("Help", |ui| {
                     if ui.button("About Grove").clicked() {
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
             });

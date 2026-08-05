@@ -3,13 +3,13 @@
 use super::*;
 
 impl GroveApp {
-    pub(super) fn show_toolbar(&mut self, ctx: &Context) {
+    pub(super) fn show_toolbar(&mut self, ui: &mut egui::Ui) {
         // Left toolbar (hidden in Drawing mode) — two-column layout
         if matches!(self.workspace_mode, WorkspaceMode::Model) {
-        SidePanel::left("toolbar")
-            .exact_width(130.0)
+        Panel::left("toolbar")
+            .exact_size(130.0)
             .resizable(false)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 // Gather context for column 2 before entering closure
                 let hardscape_tool_ref = self.draw_tool.as_ref().and_then(|t| {
                     t.as_any_ref()

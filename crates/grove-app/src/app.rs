@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use eframe::Frame;
-use egui::{CentralPanel, Color32, Context, SidePanel, TopBottomPanel, Vec2};
+use egui::{CentralPanel, Color32, Context, Panel, Vec2};
 
 use grove_core::commands::{CommandHistory, UpdateGeometryCommand};
 use grove_core::entity::Geometry;
@@ -727,28 +727,29 @@ impl GroveApp {
 }
 
 impl eframe::App for GroveApp {
-    fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut Frame) {
+        let ctx = ui.ctx().clone();
         if self.first_frame {
-            theme::apply_theme(ctx);
+            theme::apply_theme(&ctx);
             self.canvas.viewport.offset = glam::Vec2::new(400.0, 300.0);
             self.canvas.viewport.zoom = 0.5;
             self.first_frame = false;
         }
 
         // Must run before panels, which consume key events
-        self.handle_global_shortcuts(ctx);
-        self.tick_autosave(ctx);
-        self.update_title(ctx);
+        self.handle_global_shortcuts(&ctx);
+        self.tick_autosave(&ctx);
+        self.update_title(&ctx);
 
         // Panel order matters in egui: top/bottom, then sides, central last
-        self.show_menu_bar(ctx);
-        self.show_status_bar(ctx);
-        self.show_toolbar(ctx);
-        self.show_left_palettes(ctx);
-        self.show_right_panel(ctx);
-        self.show_central_canvas(ctx);
+        self.show_menu_bar(ui);
+        self.show_status_bar(ui);
+        self.show_toolbar(ui);
+        self.show_left_palettes(ui);
+        self.show_right_panel(ui);
+        self.show_central_canvas(ui);
 
         // Floating windows go after all panels
-        self.show_estimate_window(ctx);
+        self.show_estimate_window(&ctx);
     }
 }

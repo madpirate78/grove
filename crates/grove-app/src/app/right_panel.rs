@@ -3,15 +3,15 @@
 use super::*;
 
 impl GroveApp {
-    pub(super) fn show_right_panel(&mut self, ctx: &Context) {
+    pub(super) fn show_right_panel(&mut self, ui: &mut egui::Ui) {
         // Right panel
         let mut props_change: Option<(uuid::Uuid, grove_core::entity::DomainData)> = None;
         let mut drawing_action: Option<crate::panels::drawing_properties::DrawingPropertiesAction> = None;
         let mut drawing_mgr_action: Option<crate::panels::drawing_manager::DrawingManagerAction> = None;
-        SidePanel::right("properties_panel")
-            .default_width(220.0)
-            .width_range(180.0..=400.0)
-            .show(ctx, |ui| {
+        Panel::right("properties_panel")
+            .default_size(220.0)
+            .size_range(180.0..=400.0)
+            .show(ui, |ui| {
                 if let WorkspaceMode::Drawing(drawing_id) = self.workspace_mode {
                     // Drawing mode: show drawing properties
                     if let Some(drawing) = self.project.find_drawing(drawing_id) {
@@ -112,21 +112,21 @@ impl GroveApp {
                         response.context_menu(|ui| {
                             if ui.button("Rename").clicked() {
                                 self.layer_rename = Some((i, layer_name.clone()));
-                                ui.close_menu();
+                                ui.close();
                             }
                             if i > 0 && ui.button("Move Up").clicked() {
                                 move_up_idx = Some(i);
-                                ui.close_menu();
+                                ui.close();
                             }
                             if i < layer_count - 1 && ui.button("Move Down").clicked() {
                                 move_down_idx = Some(i);
-                                ui.close_menu();
+                                ui.close();
                             }
                             if layer_count > 1 {
                                 ui.separator();
                                 if ui.button("Delete").clicked() {
                                     delete_idx = Some(i);
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                             }
                         });

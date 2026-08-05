@@ -3,12 +3,13 @@
 use super::*;
 
 impl GroveApp {
-    pub(super) fn show_status_bar(&mut self, ctx: &Context) {
+    pub(super) fn show_status_bar(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
         let shift = ctx.input(|i| i.modifiers.shift);
 
-        TopBottomPanel::bottom("status_bar")
-            .exact_height(24.0)
-            .show(ctx, |ui| {
+        Panel::bottom("status_bar")
+            .exact_size(24.0)
+            .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.painter()
                         .rect_filled(ui.max_rect(), 0.0, ThemeColours::STATUS_BAR);

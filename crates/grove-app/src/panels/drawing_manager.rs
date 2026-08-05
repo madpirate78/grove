@@ -45,7 +45,7 @@ pub fn draw_drawing_manager(
         for template in DrawingTemplate::all() {
             if ui.button(template.label()).clicked() {
                 action = Some(DrawingManagerAction::CreateFromTemplate(*template));
-                ui.close_menu();
+                ui.close();
             }
         }
     });

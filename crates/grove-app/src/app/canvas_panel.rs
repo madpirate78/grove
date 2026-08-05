@@ -3,14 +3,15 @@
 use super::*;
 
 impl GroveApp {
-    pub(super) fn show_central_canvas(&mut self, ctx: &Context) {
+    pub(super) fn show_central_canvas(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
         let shift = ctx.input(|i| i.modifiers.shift);
         let ctrl = ctx.input(|i| i.modifiers.ctrl || i.modifiers.mac_cmd);
 
         // Central canvas
         CentralPanel::default()
             .frame(egui::Frame::NONE)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 // Drawing mode: render drawing view with its own viewport
                 if let WorkspaceMode::Drawing(drawing_id) = self.workspace_mode {
                     // Allocate the full panel for drawing mode
@@ -146,7 +147,7 @@ impl GroveApp {
 
                 // Render background images (behind entities)
                 for img in &self.project.background_images {
-                    self.bg_renderer.ensure_texture(ctx, img);
+                    self.bg_renderer.ensure_texture(&ctx, img);
                     self.bg_renderer
                         .draw(&canvas_result.painter, &self.canvas.viewport, img);
                 }
@@ -162,7 +163,7 @@ impl GroveApp {
 
                 // Render entourage images (textured quads)
                 self.entourage_renderer.draw(
-                    ctx,
+                    &ctx,
                     &canvas_result.painter,
                     &self.canvas.viewport,
                     &self.project.entities,

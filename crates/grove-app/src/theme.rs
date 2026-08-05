@@ -68,5 +68,5 @@ pub fn apply_theme(ctx: &egui::Context) {
         FontId::new(12.0, FontFamily::Monospace),
     );
 
-    ctx.set_style(style);
+    ctx.set_global_style(style);
 }
