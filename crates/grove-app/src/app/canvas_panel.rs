@@ -772,21 +772,7 @@ impl GroveApp {
                             || i.key_pressed(egui::Key::Backspace)
                             || (!ctrl && i.key_pressed(egui::Key::X))
                     }) {
-                        let ids: Vec<_> = self.selection.ids.clone();
-                        if !ids.is_empty() {
-                            let commands: Vec<Box<dyn grove_core::commands::Command>> = ids
-                                .iter()
-                                .map(|&id| -> Box<dyn grove_core::commands::Command> {
-                                    Box::new(grove_core::commands::RemoveEntityCommand::new(id))
-                                })
-                                .collect();
-                            let cmd = Box::new(grove_core::commands::CompoundCommand::new(
-                                commands,
-                                "Delete entities",
-                            ));
-                            self.history.execute(cmd, &mut self.project);
-                        }
-                        self.selection.clear();
+                        self.delete_selection("Delete entities");
                     }
                 }
 

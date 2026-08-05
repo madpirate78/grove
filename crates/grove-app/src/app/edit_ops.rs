@@ -1,8 +1,29 @@
-//! Clipboard operations: copy, paste, duplicate.
+//! Clipboard and selection edit operations: copy, cut, paste, duplicate, delete.
 
 use super::*;
 
 impl GroveApp {
+    /// Delete the current selection as one undoable compound command.
+    pub(super) fn delete_selection(&mut self, label: &str) {
+        let ids: Vec<_> = self.selection.ids.clone();
+        if !ids.is_empty() {
+            let commands: Vec<Box<dyn grove_core::commands::Command>> = ids
+                .iter()
+                .map(|&id| -> Box<dyn grove_core::commands::Command> {
+                    Box::new(grove_core::commands::RemoveEntityCommand::new(id))
+                })
+                .collect();
+            let cmd = Box::new(grove_core::commands::CompoundCommand::new(commands, label));
+            self.history.execute(cmd, &mut self.project);
+        }
+        self.selection.clear();
+    }
+
+    pub(super) fn cut_selection(&mut self) {
+        self.copy_selection_to_clipboard();
+        self.delete_selection("Cut entities");
+    }
+
     /// Recursively assign new UUIDs to an entity and all its children.
     pub(super) fn assign_new_ids(entity: &mut grove_core::entity::Entity) {
         entity.id = uuid::Uuid::new_v4();

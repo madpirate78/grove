@@ -166,7 +166,8 @@ pub struct BoqLine {
 /// Generate an aggregated, priced bill of quantities from project entities.
 ///
 /// Plant quantities are counted the same way as the planting schedule
-/// (per-`Plant` entity, recursing into children) so the two always agree.
+/// (per-`Plant` entity plus `PlantGroup` counts, recursing into children)
+/// so the two always agree.
 pub fn generate_boq(entities: &[Entity], costs: &UnitCosts) -> Vec<BoqLine> {
     // (group, description, unit) → (quantity, unit_cost)
     let mut agg: BTreeMap<(&'static str, String, BoqUnit), (f64, f64)> = BTreeMap::new();
@@ -234,6 +235,10 @@ fn collect_entity(
                 format!("{} ({})", p.botanical_name, p.common_name)
             };
             add(agg, "Plants", display, BoqUnit::Each, 1.0, costs.plant_rate(p.category));
+        }
+        DomainData::PlantGroup(g) => {
+            add(agg, "Plants", g.botanical_name.clone(), BoqUnit::Each,
+                g.count as f64, costs.plant_rate(g.category));
         }
         DomainData::Wall(w) => {
             let mat = w.base.material;

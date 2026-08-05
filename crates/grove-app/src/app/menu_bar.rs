@@ -123,22 +123,7 @@ impl GroveApp {
                         .add_enabled(has_selection, egui::Button::new("Cut  Ctrl+X"))
                         .clicked()
                     {
-                        self.copy_selection_to_clipboard();
-                        let ids: Vec<_> = self.selection.ids.clone();
-                        if !ids.is_empty() {
-                            let commands: Vec<Box<dyn grove_core::commands::Command>> = ids
-                                .iter()
-                                .map(|&id| -> Box<dyn grove_core::commands::Command> {
-                                    Box::new(grove_core::commands::RemoveEntityCommand::new(id))
-                                })
-                                .collect();
-                            let cmd = Box::new(grove_core::commands::CompoundCommand::new(
-                                commands,
-                                "Cut entities",
-                            ));
-                            self.history.execute(cmd, &mut self.project);
-                        }
-                        self.selection.clear();
+                        self.cut_selection();
                         ui.close_menu();
                     }
                     if ui

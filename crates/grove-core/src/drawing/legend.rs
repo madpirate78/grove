@@ -18,6 +18,10 @@ pub struct LegendItem {
 }
 
 /// Collect unique plants visible in a drawing's viewports.
+///
+/// Counts match the planting schedule (`garden::schedule::generate_schedule`):
+/// per-`Plant` entity plus `PlantGroup` counts, recursing into children —
+/// restricted here to entities on layers visible in at least one viewport.
 pub fn collect_legend_items(
     entities: &[Entity],
     viewports: &[DrawingViewport],
@@ -27,14 +31,24 @@ pub fn collect_legend_items(
     let mut items: BTreeMap<String, LegendItem> = BTreeMap::new();
 
     for entity in entities {
-        // Check if this entity is visible in ANY viewport
-        let visible = viewports.iter().any(|vp| {
-            is_layer_visible_in_viewport(entity.layer_id, vp, layers)
-        });
-        if !visible {
-            continue;
-        }
+        collect_entity(entity, viewports, layers, &mut items);
+    }
 
+    items.into_values().collect()
+}
+
+fn collect_entity(
+    entity: &Entity,
+    viewports: &[DrawingViewport],
+    layers: &LayerManager,
+    items: &mut BTreeMap<String, LegendItem>,
+) {
+    // Each entity is checked against its own layer — a child on a visible
+    // layer still counts when its parent's layer is hidden.
+    let visible = viewports.iter().any(|vp| {
+        is_layer_visible_in_viewport(entity.layer_id, vp, layers)
+    });
+    if visible {
         match &entity.domain {
             DomainData::Plant(plant) => {
                 items.entry(plant.botanical_name.clone())
@@ -59,8 +73,9 @@ pub fn collect_legend_items(
             _ => {}
         }
     }
-
-    items.into_values().collect()
+    for child in &entity.children {
+        collect_entity(child, viewports, layers, items);
+    }
 }
 
 /// Render a plant legend as an SVG group at the given position.
@@ -203,6 +218,68 @@ mod tests {
 
         let items = collect_legend_items(&entities, &[vp], &layers);
         assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_child_plants_counted_in_legend() {
+        let layers = LayerManager::new();
+        let layer_id = layers.layers[0].id;
+        let vp = DrawingViewport::new("Main", 100);
+
+        // A plant nested as a child of a group container entity
+        let mut parent = make_plant_entity("Rosa rugosa", "Rose", [200, 50, 50, 255], layer_id);
+        parent.children.push(make_plant_entity(
+            "Rosa rugosa", "Rose", [200, 50, 50, 255], layer_id,
+        ));
+
+        let items = collect_legend_items(&[parent], &[vp], &layers);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].count, 2);
+    }
+
+    #[test]
+    fn test_legend_counts_agree_with_schedule() {
+        use crate::garden::plant::{DistributionMethod, PlantGroupData};
+        use crate::garden::schedule::generate_schedule;
+
+        let layers = LayerManager::new();
+        let layer_id = layers.layers[0].id;
+        let vp = DrawingViewport::new("Main", 100);
+
+        let mut group = Entity::new(
+            "Lavender drift",
+            Geometry::Circle(CircleData { center: Vec2::ZERO, radius: 2000.0 }),
+            DomainData::PlantGroup(PlantGroupData {
+                plant_id: uuid::Uuid::new_v4(),
+                botanical_name: "Lavandula angustifolia".into(),
+                category: Category::Shrub,
+                spacing_mm: 400.0,
+                distribution: DistributionMethod::Grid,
+                count: 25,
+            }),
+        );
+        group.layer_id = layer_id;
+        // Child plant inside the group container
+        group.children.push(make_plant_entity(
+            "Rosa rugosa", "Rose", [200, 50, 50, 255], layer_id,
+        ));
+        let entities = vec![
+            make_plant_entity("Rosa rugosa", "Rose", [200, 50, 50, 255], layer_id),
+            group,
+        ];
+
+        // With all layers visible, the legend and the schedule must agree
+        // species-for-species.
+        let items = collect_legend_items(&entities, &[vp], &layers);
+        let schedule = generate_schedule(&entities);
+        assert_eq!(items.len(), schedule.len());
+        for entry in &schedule {
+            let item = items
+                .iter()
+                .find(|i| i.botanical_name == entry.botanical_name)
+                .expect("legend missing a schedule species");
+            assert_eq!(item.count, entry.quantity, "{}", entry.botanical_name);
+        }
     }
 
     #[test]

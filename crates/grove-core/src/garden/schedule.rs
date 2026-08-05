@@ -46,20 +46,41 @@ pub fn schedule_numbers(entities: &[Entity]) -> HashMap<String, usize> {
 }
 
 fn collect_plants(entity: &Entity, counts: &mut HashMap<String, ScheduleEntry>) {
-    if let DomainData::Plant(ref data) = entity.domain {
-        counts
-            .entry(data.botanical_name.clone())
-            .and_modify(|e| e.quantity += 1)
-            .or_insert_with(|| ScheduleEntry {
-                botanical_name: data.botanical_name.clone(),
-                common_name: data.common_name.clone(),
-                category: data.category,
-                quantity: 1,
-                height_mm: data.height_mm,
-                spread_mm: data.spread_mm,
-                colour_code: data.colour_code.clone(),
-                evergreen: data.evergreen,
-            });
+    match &entity.domain {
+        DomainData::Plant(data) => {
+            counts
+                .entry(data.botanical_name.clone())
+                .and_modify(|e| e.quantity += 1)
+                .or_insert_with(|| ScheduleEntry {
+                    botanical_name: data.botanical_name.clone(),
+                    common_name: data.common_name.clone(),
+                    category: data.category,
+                    quantity: 1,
+                    height_mm: data.height_mm,
+                    spread_mm: data.spread_mm,
+                    colour_code: data.colour_code.clone(),
+                    evergreen: data.evergreen,
+                });
+        }
+        // A group stands for `count` plants of one species; the group data
+        // carries no common name or dimensions, so those stay empty unless a
+        // sibling `Plant` of the same species fills them in first.
+        DomainData::PlantGroup(group) => {
+            counts
+                .entry(group.botanical_name.clone())
+                .and_modify(|e| e.quantity += group.count)
+                .or_insert_with(|| ScheduleEntry {
+                    botanical_name: group.botanical_name.clone(),
+                    common_name: String::new(),
+                    category: group.category,
+                    quantity: group.count,
+                    height_mm: 0,
+                    spread_mm: 0,
+                    colour_code: String::new(),
+                    evergreen: false,
+                });
+        }
+        _ => {}
     }
     for child in &entity.children {
         collect_plants(child, counts);
@@ -130,6 +151,34 @@ mod tests {
             Geometry::Circle(CircleData { center: Vec2::ZERO, radius: 400.0 }),
             DomainData::Plant(data),
         )
+    }
+
+    #[test]
+    fn test_plant_group_counts_in_schedule() {
+        use crate::garden::plant::{DistributionMethod, PlantGroupData};
+
+        let group = Entity::new(
+            "Lavender drift",
+            Geometry::Circle(CircleData { center: Vec2::ZERO, radius: 2000.0 }),
+            DomainData::PlantGroup(PlantGroupData {
+                plant_id: uuid::Uuid::new_v4(),
+                botanical_name: "Lavandula angustifolia".into(),
+                category: Category::Shrub,
+                spacing_mm: 400.0,
+                distribution: DistributionMethod::Grid,
+                count: 25,
+            }),
+        );
+        let entities = vec![
+            plant_entity("Lavandula angustifolia", Category::Shrub),
+            group,
+        ];
+
+        let schedule = generate_schedule(&entities);
+        assert_eq!(schedule.len(), 1);
+        // 1 individual plant + 25 in the group; individual supplies the details
+        assert_eq!(schedule[0].quantity, 26);
+        assert_eq!(schedule[0].common_name, "Lavandula angustifolia");
     }
 
     #[test]
