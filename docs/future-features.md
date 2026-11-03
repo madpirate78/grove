@@ -2,7 +2,7 @@
 
 ## Estimate Builder (Crowd-Calibrated Cost Estimator)
 
-**Status:** Brainstorming (2026-03-23)
+**Status:** Phases A and B shipped (2026-08-04); Phase C (online feedback service) not started. Proposed 2026-03-23.
 
 ### Concept
 
@@ -44,7 +44,7 @@ A cost estimation system that calculates project costs from the entities in a de
 
 ## Per-Drawing Plant Rendering Styles
 
-**Status:** Brainstorming (2026-04-18)
+**Status:** Shipped (2026-08-04), all phases. Proposed 2026-04-18; kept here as a design record.
 
 ### Concept
 
@@ -87,7 +87,7 @@ Drawing properties panel gains a dropdown for style, alongside the existing `col
 - **Phase A** — DONE (2026-08-04): `PlantStyle` enum on `DrawingViewport`, `Simple`/`Outline`, drawing properties UI.
 - **Phase B** — DONE (2026-08-04): `Canopy` (concentric-ring hint, not yet scalloped) and `Silhouette`.
 - **Phase C** — DONE (2026-08-04): `Numbered` style renders the plant's 1-based row number in the planting schedule (`garden::schedule::schedule_numbers`, keyed by botanical name in schedule order: category, then botanical name). The CSV export now has a matching `#` column.
-- **Phase D** — DONE (2026-08-04) as *procedural* symbols rather than an SVG asset library: `garden::canopy` generates species-seeded outlines (Scalloped for deciduous trees, Spiky for evergreens/grasses, Lobed for shrubs) with position-seeded rotation, rendered as vector paths in both the drawing view and SVG export. The entourage-pipeline route was rejected because entourage embeds rasterized PNGs — wrong for print-oriented plan output. A user-extensible SVG symbol library remains possible later if the entourage pipeline gains vector-preserving export.
+- **Phase D** — DONE (2026-08-04) as *procedural* symbols rather than an SVG asset library: `garden::canopy` generates species-seeded outlines (Scalloped for deciduous trees, Spiky for evergreens/grasses, Lobed for shrubs) with position-seeded rotation, rendered as vector paths in both the drawing view and SVG export. The entourage-pipeline route was rejected because, at the time, entourage symbols embedded rasterized PNGs, which is wrong for print-oriented plan output. Entourage has since moved to pure vector, so a user-extensible SVG symbol library is now a realistic follow-up.
 
 ---
 

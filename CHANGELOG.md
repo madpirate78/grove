@@ -32,13 +32,13 @@ as dated sections.
 - **Plant labels overflowing their symbols** — labels now shrink to fit within the plant circle and are dropped entirely when they'd be illegibly small, instead of rendering at a fixed minimum font that overflowed onto neighbouring plants. Applied consistently in the model canvas, drawing view (all plant styles incl. schedule numbers), and SVG export (estimated glyph metrics, since no text measurement exists at generation time).
 - **Miter spikes at sharp polygon and width-shape corners** — worked around egui 0.31's [emilk/egui#1226](https://github.com/emilk/egui/issues/1226), in which `add_line_loop` hardcodes the sharp-corner cut-off to `false`, causing closed stroked paths to shoot miter offsets toward infinity at acute corners. New `stroke_closed_loop` helper in `canvas.rs` strokes closed loops as open paths with the first vertex duplicated at the end, routing through egui's `add_open_points` tessellator which applies the cut-off correctly. Fixes visible artifacts on polygon boundaries (outer and holes) and on wall/path/edging outlines.
 
-## [2026-04 — edge trace & hardscape polish] — 2e0491e
+## [2026-03-18 — edge trace & hardscape polish] — 2e0491e
 
 ### Added
 - Edge trace feature for the polygon drawing tool — `visible_edges()` in `grove-core` extracts snapable boundaries from existing geometry (natural boundaries for shapes, left/right offset sides for width entities), enabling snap-to-edge while drawing polygons.
 - Hardscape palette improvements and assorted tool refinements.
 
-## [2026-03 — polygon tools & boolean ops] — 6f25d2e
+## [2026-03-11 — polygon tools & boolean ops] — 6f25d2e
 
 ### Added
 - Polygon drawing tools.
@@ -47,14 +47,14 @@ as dated sections.
 ### Fixed
 - **Phantom tangents inside filled polygons** — polygon fills now render as a single batched `egui::Mesh` rather than many small `convex_polygon` calls, preventing egui from anti-aliasing the internal triangulation edges. (This fix is distinct from the closed-path miter spike fixed in [Unreleased].)
 
-## [2026-02 — drawings, viewport modes, SVG export] — fc6d234
+## [2026-03-11 — drawings, viewport modes, SVG export] — fc6d234
 
 ### Added
 - Drawing annotations (labels with leader lines).
 - Viewport colour modes (default / by category / by species / monochrome) for print-oriented rendering.
 - Enhanced SVG export.
 
-## [2026-01 — initial commit] — 6ced1bb
+## [2026-03-09 — initial commit] — 6ced1bb
 
 ### Added
 - Initial Grove 2D CAD garden design application — three-crate workspace (`grove-core`, `grove-widgets`, `grove-app`), entity system with `Geometry` + `DomainData`, tool/command split with undo, egui canvas with pan/zoom/grid, persistence via rusqlite, base drawing tools, and the model/drawing workspace modes.

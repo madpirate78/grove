@@ -51,7 +51,7 @@ All hardscape objects share a common set of base properties, then add type-speci
 
 ### 2.1 Wall
 
-*Drawn as a polyline in plan. Extruded to Height in 3D. Can be freestanding or retaining.*
+*Drawn as a polyline in plan. Can be freestanding or retaining. Height supports a future 3D export (extrusion).*
 
 | Property | Type | Default | Notes |
 |---|---|---|---|
@@ -124,7 +124,7 @@ All hardscape objects share a common set of base properties, then add type-speci
 
 ### 2.6 Raised Bed
 
-*Drawn as a closed shape in plan. Extruded to Height in 3D. Contains planting.*
+*Drawn as a closed shape in plan. Contains planting. Height supports a future 3D export (extrusion).*
 
 | Property | Type | Default | Notes |
 |---|---|---|---|
@@ -138,7 +138,7 @@ All hardscape objects share a common set of base properties, then add type-speci
 
 ### 2.7 Fence
 
-*Drawn as a polyline in plan. Extruded to Height in 3D.*
+*Drawn as a polyline in plan. Height supports a future 3D export (extrusion).*
 
 | Property | Type | Default | Notes |
 |---|---|---|---|
@@ -186,7 +186,7 @@ All hardscape objects share a common set of base properties, then add type-speci
 
 ### 2.10 Water Feature
 
-*Drawn as a closed shape or point in plan. Type determines 3D representation.*
+*Drawn as a closed shape or point in plan. Type would determine the 3D representation in a future 3D export.*
 
 | Property | Type | Default | Notes |
 |---|---|---|---|
