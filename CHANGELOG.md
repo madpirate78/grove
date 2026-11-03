@@ -3,13 +3,19 @@
 All notable changes to Grove are recorded here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Grove is pre-1.0 and not yet using semantic versioning; releases are tracked
-as dated sections.
+Grove follows [Semantic Versioning](https://semver.org/). It is pre-1.0: expect
+breaking changes, including to the `.grove` project file format. Sections before
+0.1.0-alpha.1 predate tagged releases and are dated by commit.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.1] — 2026-11-03
+
+First public pre-release (alpha): usable for real plans, but expect rough edges
+and breaking changes to the `.grove` file format before 1.0.
+
 ### Added
-- **Open-source release prep** — Grove is now MIT licensed (`LICENSE`), with licence/repository metadata shared across both crates via `[workspace.package]` a project `README.md`, and a `ROADMAP.md` of planned work. The entourage `LICENSES.md` was stale: it credited third-party symbols that had already been removed and left out every symbol actually shipped. `scripts/fetch_entourage.py` now lists any on-disk symbol without a manifest entry as original MIT artwork, and always attributes from the full manifest (previously `--only <category>` dropped other categories' attributions).
+- **Open-source release prep** — Grove is now MIT licensed (`LICENSE`), with licence/repository metadata shared across both crates via `[workspace.package]`, a project `README.md`, and a `ROADMAP.md` of planned work. The entourage `LICENSES.md` was stale: it credited third-party symbols that had already been removed and left out every symbol actually shipped. `scripts/fetch_entourage.py` now lists any on-disk symbol without a manifest entry as original MIT artwork, and always attributes from the full manifest (previously `--only <category>` dropped other categories' attributions).
 
 ### Removed
 - **Legacy import tooling and docs from the project's origins** — a 3D-model → SVG conversion route in the entourage scripts and its dead manifest entries; the unused `dxf` workspace dependency; and the original porting plan, whose still-relevant design decisions now live in `docs/architecture.md`. The domain spec was renamed to `docs/data-model.md` and rewritten as Grove's own data model; its never-built Blender export pipeline moved to `docs/future-features.md`.
