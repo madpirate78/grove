@@ -25,9 +25,7 @@ Depends on: standard library only (urllib). No third-party deps.
 from __future__ import annotations
 
 import argparse
-import os
 import re
-import subprocess
 import sys
 import tomllib
 import urllib.error
@@ -39,9 +37,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = REPO_ROOT / "scripts" / "entourage_manifest.toml"
 DATA_DIR = REPO_ROOT / "data" / "entourage"
 LICENCES_PATH = DATA_DIR / "LICENSES.md"
-FCSTD_CACHE = REPO_ROOT / "scripts" / ".fcstd-cache"
-FCSTD_CONVERTER = REPO_ROOT / "scripts" / "fcstd_to_svg.py"
-FREECAD_APPIMAGE_ENV = "FREECAD_APPIMAGE"
 
 VALID_CATEGORIES = {"people", "vehicles", "furniture", "garden"}
 VALID_LICENCES = {"cc0", "cc-by", "cc-by-sa", "public-domain", "lgpl"}
@@ -109,46 +104,6 @@ def normalise_svg(data: bytes, width_mm: float, height_mm: float) -> bytes:
     return data[: m.start()] + new_open + data[m.end() :]
 
 
-def fcstd_to_svg(fcstd_path: Path, svg_path: Path, mode: str = "hull", up_axis: str = "auto") -> None:
-    """Run FreeCAD in console mode to convert a .FCStd file to an SVG.
-
-    `mode` controls how the projection is drawn:
-      - "hull"  (default): convex hull of the 3D footprint — clean outline.
-      - "edges": every visible edge from TechDraw projection — detailed.
-    `up_axis` picks the 3D axis that points out of the page (gets dropped):
-      - "auto" (default): pick the axis whose min is closest to zero
-        (i.e. the object rests on a ground plane on that axis).
-      - "Z" / "Y" / "X": force a specific axis. Needed when the auto heuristic
-        picks wrong, e.g. some mannequin FCStd models are Y-up.
-    """
-    appimage = os.environ.get(FREECAD_APPIMAGE_ENV)
-    if not appimage:
-        # Try a couple of sensible defaults.
-        candidates = sorted(Path.home().glob("Applications/FreeCAD*.AppImage")) + \
-                     sorted(Path.home().glob("Downloads/FreeCAD*.AppImage"))
-        if candidates:
-            appimage = str(candidates[0])
-    if not appimage or not Path(appimage).exists():
-        raise RuntimeError(
-            f"FreeCAD AppImage not found. Set {FREECAD_APPIMAGE_ENV}=/path/to/FreeCAD.AppImage"
-        )
-
-    env = {
-        **os.environ,
-        "FCSTD_INPUT": str(fcstd_path),
-        "FCSTD_OUTPUT": str(svg_path),
-        "ENTOURAGE_MODE": mode,
-        "ENTOURAGE_UP_AXIS": up_axis,
-    }
-    cmd = [appimage, "--console", str(FCSTD_CONVERTER)]
-    result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=180)
-    if result.returncode != 0 and not svg_path.exists():
-        raise RuntimeError(
-            f"FreeCAD conversion failed (rc={result.returncode}):\n"
-            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-        )
-
-
 def write_item(item: dict, dry_run: bool) -> Path:
     dest_dir = DATA_DIR / item["category"]
     dest = dest_dir / item["filename"]
@@ -159,27 +114,6 @@ def write_item(item: dict, dry_run: bool) -> Path:
 
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    # Route 1: .FCStd source → download + convert via FreeCAD → SVG
-    if url.lower().endswith(".fcstd"):
-        FCSTD_CACHE.mkdir(parents=True, exist_ok=True)
-        cached = FCSTD_CACHE / (item["filename"].rsplit(".", 1)[0] + ".FCStd")
-        if not cached.exists():
-            print(f"  downloading {item['name']} (.FCStd source)")
-            cached.write_bytes(download(url))
-        mode = item.get("mode", "hull")
-        up_axis = item.get("up_axis", "auto")
-        print(f"  converting {cached.name} via FreeCAD (mode={mode}, up={up_axis})")
-        fcstd_to_svg(cached, dest, mode=mode, up_axis=up_axis)
-        # The converter emits a viewBox in the shape's native millimetres —
-        # that IS the real-world size. We do not rewrite it from the manifest
-        # (the manifest width/height for FCStd items is informational only),
-        # because scaling the viewBox without scaling the paths would clip
-        # the drawing.
-        size_kb = dest.stat().st_size / 1024
-        print(f"  fetched {item['name']} ({size_kb:.1f} KB) -> {dest.relative_to(REPO_ROOT)}")
-        return dest
-
-    # Route 2: direct SVG or PNG download
     raw = download(url)
     if item["filename"].lower().endswith(".svg"):
         raw = normalise_svg(raw, float(item["width_mm"]), float(item["height_mm"]))
@@ -198,7 +132,7 @@ def write_licences(items: list[dict]) -> None:
     lines.append("# Entourage Library Licences")
     lines.append("")
     lines.append(
-        "This directory contains scraped entourage symbols used as scale references in Grove plans."
+        "This directory contains the entourage symbols used as scale references in Grove plans."
     )
     lines.append(
         "Each entry below records the source, author, and licence for every file shipped in "
@@ -242,8 +176,31 @@ def write_licences(items: list[dict]) -> None:
                 )
         lines.append("")
 
+    # Anything on disk without a manifest entry was made for Grove itself
+    # (AI-generated composites traced to vector by the extract_entourage_*
+    # scripts) and ships under the project's MIT licence.
+    attributed = {f"{it['category']}/{it['filename']}" for it in items}
+    original = sorted(
+        p.relative_to(DATA_DIR).as_posix()
+        for p in DATA_DIR.glob("*/*.svg")
+        if p.relative_to(DATA_DIR).as_posix() not in attributed
+    )
+    if original:
+        lines.append("## Original Grove artwork — MIT (see the repository `LICENSE`)")
+        lines.append("")
+        lines.append(
+            "Created for Grove: AI-generated top-down composites, traced to pure vector by "
+            "`scripts/extract_entourage_from_image.py` / `scripts/extract_entourage_from_svg.py`."
+        )
+        lines.append("")
+        lines.extend(f"- **{rel_path}**" for rel_path in original)
+        lines.append("")
+
     LICENCES_PATH.write_text("\n".join(lines), encoding="utf-8")
-    print(f"  wrote {LICENCES_PATH.relative_to(REPO_ROOT)} ({len(items)} items)")
+    print(
+        f"  wrote {LICENCES_PATH.relative_to(REPO_ROOT)} "
+        f"({len(items)} attributed, {len(original)} original)"
+    )
 
 
 def main() -> int:
@@ -262,8 +219,10 @@ def main() -> int:
 
     items = load_manifest()
     if not items:
-        print("manifest has no items to fetch (only the placeholder).", file=sys.stderr)
-        return 1
+        print("manifest has no items to fetch; regenerating LICENSES.md only.")
+        if not args.dry_run:
+            write_licences([])
+        return 0
 
     # Validate
     errors: list[str] = []
@@ -276,6 +235,9 @@ def main() -> int:
             print(f"  - {err}", file=sys.stderr)
         return 2
 
+    # LICENSES.md must always cover the whole manifest, not just the
+    # category being fetched, so keep the full list for write_licences.
+    all_items = items
     if args.only:
         items = [it for it in items if it["category"] == args.only]
         if not items:
@@ -292,7 +254,7 @@ def main() -> int:
             print(f"  FAILED {item['name']}: {e}", file=sys.stderr)
 
     if not args.dry_run:
-        write_licences(items)
+        write_licences(all_items)
 
     if failures:
         print(f"\n{len(failures)} item(s) failed. Re-run to retry.", file=sys.stderr)

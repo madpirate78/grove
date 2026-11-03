@@ -1,20 +1,16 @@
 # Entourage library manifest
 #
-# Each [[items]] entry is a top-down entourage symbol placed into
-# data/entourage/{category}/ by scripts/fetch_entourage.py.
+# Each [[items]] entry is a third-party top-down entourage symbol that
+# scripts/fetch_entourage.py downloads into data/entourage/{category}/ and
+# credits in data/entourage/LICENSES.md.
 #
-# Two source routes are supported based on the URL extension:
-#   - URL ending in .svg / .png → downloaded directly, viewBox rewritten to mm.
-#   - URL ending in .FCStd      → downloaded, then converted to SVG via FreeCAD
-#                                 (requires a FreeCAD AppImage; set
-#                                 FREECAD_APPIMAGE env var or put one at
-#                                 ~/Applications/FreeCAD*.AppImage).
+# The URL must point at a raw .svg or .png file. SVGs get their viewBox
+# rewritten to the manifest's real-world millimetre size.
 #
 # Fields per item:
 #   name          Display name shown in the palette.
 #   category      One of: people, vehicles, furniture, garden.
-#   filename      Destination filename under data/entourage/{category}/
-#                 (always end in .svg regardless of source format).
+#   filename      Destination filename under data/entourage/{category}/.
 #   source        Human-readable source key.
 #   url           Direct download URL (raw file, not landing page).
 #   licence       cc0 | cc-by | cc-by-sa | public-domain | lgpl.
@@ -27,104 +23,22 @@
 #   adult top-down ~500 mm diameter; child ~350 mm; sedan ~4500x1800 mm;
 #   bench ~1600x500 mm; garden shed ~2500x2000 mm.
 #
-# Optional field for .FCStd sources:
-#   mode          "hull" (default) for a clean convex-hull outline; "edges"
-#                 for every TechDraw-visible edge (use for ornate objects
-#                 whose internal detail matters, like the fountain).
-
-# ---------------- people ----------------
+# The manifest is currently empty: every symbol shipped in data/entourage/
+# is original Grove artwork (AI-generated top-down composites traced to
+# vector by scripts/extract_entourage_from_image.py / extract_entourage_from_svg.py),
+# covered by Grove's MIT licence. fetch_entourage.py lists any on-disk symbol
+# without a manifest entry as original work in LICENSES.md.
 #
-# Mannequin_mp FCStd models were tried here but gave unusable top-down
-# projections (convex hulls of T-pose / lying-flat skeletons look like
-# triangles). Replaced with AI-generated raster-wrapped SVGs via
-# scripts/extract_entourage_from_image.py — those live in
-# data/entourage/people/ directly, not re-fetchable from a manifest.
-
-# ---------------- furniture ----------------
-
-[[items]]
-name = "Chair"
-category = "furniture"
-filename = "chair.svg"
-source = "FreeCAD-library"
-url = "https://raw.githubusercontent.com/FreeCAD/FreeCAD-library/master/Architectural%20Parts/Living%20room/FCBL_chair.FCStd"
-licence = "lgpl"
-author = "FreeCAD community"
-source_page = "https://github.com/FreeCAD/FreeCAD-library/tree/master/Architectural%20Parts/Living%20room"
-width_mm = 500
-height_mm = 500
-
-[[items]]
-name = "Upholstered Chair"
-category = "furniture"
-filename = "chair_upholstered.svg"
-source = "FreeCAD-library"
-url = "https://raw.githubusercontent.com/FreeCAD/FreeCAD-library/master/Architectural%20Parts/Living%20room/FCBL_chair_upholstered.FCStd"
-licence = "lgpl"
-author = "FreeCAD community"
-source_page = "https://github.com/FreeCAD/FreeCAD-library/tree/master/Architectural%20Parts/Living%20room"
-width_mm = 700
-height_mm = 700
-
-[[items]]
-name = "Rectangular Table"
-category = "furniture"
-filename = "rectangular_table.svg"
-source = "FreeCAD-library"
-url = "https://raw.githubusercontent.com/FreeCAD/FreeCAD-library/master/Architectural%20Parts/Living%20room/FCBL_table_parametric.FCStd"
-licence = "lgpl"
-author = "FreeCAD community"
-source_page = "https://github.com/FreeCAD/FreeCAD-library/tree/master/Architectural%20Parts/Living%20room"
-width_mm = 1200
-height_mm = 800
-
-[[items]]
-name = "Center Table"
-category = "furniture"
-filename = "center_table.svg"
-source = "FreeCAD-library"
-url = "https://raw.githubusercontent.com/FreeCAD/FreeCAD-library/master/Architectural%20Parts/Living%20room/Rectangular_center_table.FCStd"
-licence = "lgpl"
-author = "FreeCAD community"
-source_page = "https://github.com/FreeCAD/FreeCAD-library/tree/master/Architectural%20Parts/Living%20room"
-width_mm = 900
-height_mm = 500
-
-[[items]]
-name = "Sofa Armchair"
-category = "furniture"
-filename = "sofa_armchair.svg"
-source = "FreeCAD-library"
-url = "https://raw.githubusercontent.com/FreeCAD/FreeCAD-library/master/Architectural%20Parts/Living%20room/Sofa_Armchair.FCStd"
-licence = "lgpl"
-author = "FreeCAD community"
-source_page = "https://github.com/FreeCAD/FreeCAD-library/tree/master/Architectural%20Parts/Living%20room"
-width_mm = 900
-height_mm = 900
-
-[[items]]
-name = "Sideboard"
-category = "furniture"
-filename = "sideboard.svg"
-source = "FreeCAD-library"
-url = "https://raw.githubusercontent.com/FreeCAD/FreeCAD-library/master/Architectural%20Parts/Living%20room/Sideboard.FCStd"
-licence = "lgpl"
-author = "FreeCAD community"
-source_page = "https://github.com/FreeCAD/FreeCAD-library/tree/master/Architectural%20Parts/Living%20room"
-width_mm = 1800
-height_mm = 500
-
-# ---------------- garden ----------------
-
-[[items]]
-name = "Fountain"
-category = "garden"
-filename = "fountain.svg"
-source = "FreeCAD-library"
-url = "https://raw.githubusercontent.com/FreeCAD/FreeCAD-library/master/Architectural%20Parts/Garden/Fountain.FCStd"
-licence = "lgpl"
-author = "FreeCAD community"
-source_page = "https://github.com/FreeCAD/FreeCAD-library/tree/master/Architectural%20Parts/Garden"
-width_mm = 1400
-height_mm = 1400
-mode = "edges"
+# To add a third-party symbol, append an entry like:
+#
+# [[items]]
+# name = "Garden Bench"
+# category = "furniture"
+# filename = "garden_bench.svg"
+# source = "Openclipart"
+# url = "https://example.org/raw/garden_bench.svg"
+# licence = "cc0"
+# author = "Jane Doe"
+# source_page = "https://example.org/garden_bench"
+# width_mm = 1600
+# height_mm = 500

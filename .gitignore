@@ -2,7 +2,14 @@
 *.swp
 *.swo
 .DS_Store
-/scripts/.fcstd-cache/
 /scripts/.entourage-staging/
 __pycache__/
 *.pyc
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Secrets / local environment
+.env
+.env.*
+!.env.example

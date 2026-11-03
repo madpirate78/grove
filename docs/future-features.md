@@ -88,3 +88,30 @@ Drawing properties panel gains a dropdown for style, alongside the existing `col
 - **Phase B** — DONE (2026-08-04): `Canopy` (concentric-ring hint, not yet scalloped) and `Silhouette`.
 - **Phase C** — DONE (2026-08-04): `Numbered` style renders the plant's 1-based row number in the planting schedule (`garden::schedule::schedule_numbers`, keyed by botanical name in schedule order: category, then botanical name). The CSV export now has a matching `#` column.
 - **Phase D** — DONE (2026-08-04) as *procedural* symbols rather than an SVG asset library: `garden::canopy` generates species-seeded outlines (Scalloped for deciduous trees, Spiky for evergreens/grasses, Lobed for shrubs) with position-seeded rotation, rendered as vector paths in both the drawing view and SVG export. The entourage-pipeline route was rejected because entourage embeds rasterized PNGs — wrong for print-oriented plan output. A user-extensible SVG symbol library remains possible later if the entourage pipeline gains vector-preserving export.
+
+---
+
+## 3D Export to Blender
+
+**Status:** Idea (carried over from the original data-model spec; not started)
+
+### Concept
+
+Export a design to Blender for 3D visualisation. Grove's domain properties already carry the vertical information needed (wall/fence heights, riser heights, deck heights, water depths, spot heights), so the plan can be rebuilt in 3D without redrawing.
+
+### How it would work
+
+Two parallel streams, read by a Blender import add-on:
+- **Geometry** — per-object outlines/centrelines (OBJ, or a dedicated JSON geometry block).
+- **Data** — a JSON file grouping objects by type (`plants`, `hardscape`, `levels`), each record carrying its UUID, position/geometry reference and domain properties. UUIDs let a re-export update an existing Blender scene instead of rebuilding it.
+
+Per-type reconstruction in Blender:
+- **Plants** — billboard or 3D asset scaled by height and spread, coloured by colour code; geometry nodes to scatter within group boundaries.
+- **Walls / fences / raised beds** — extrude the polyline to height and width; fence panel geometry chosen by fence type.
+- **Paths / patios / decking** — thin slabs from the outline; paving or board pattern from laying pattern / board direction.
+- **Steps** — one box per riser, stacked from the base level.
+- **Pergolas** — posts and beams generated from footprint and spacing properties.
+- **Water features** — cut down to depth, water material on the surface.
+- **Terrain** — Delaunay-triangulate spot heights into a ground mesh and drape other objects onto it.
+
+Layers (`GD_*`) map to Blender collections. Materials come from a library keyed to Material + Finish (stone sawn/riven/tumbled, brick stock/engineering, timber, concrete, metal, gravel, porcelain, render, water, grass, soil, mulch).

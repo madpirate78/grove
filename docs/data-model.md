@@ -1,18 +1,16 @@
-# Garden Design Workbench
-## FreeCAD Data Model Specification
-**Version 0.1 — March 2026**
+# Grove Data Model
 
 ---
 
-This document defines the object types, properties, and data conventions for a FreeCAD workbench for garden design. It covers three domains: Planting (already implemented), Hardscape, and Levels. Each object type is specified with properties at a moderate level of detail — enough to drive both 2D plan visualisation and 3D export to Blender, plus basic construction information.
+This document defines the garden domain types, their properties, and the data conventions Grove uses. It covers three domains: Planting, Hardscape, and Levels. Each object type is specified at a moderate level of detail: enough to drive 2D plan visualisation, schedules and cost estimates, plus basic construction information. In code, each type is a `DomainData` variant (`crates/grove-core/src/entity.rs`) attached to an entity alongside its `Geometry`.
 
-All dimensions are in millimetres. All colours are hex codes. Every object carries a UUID for cross-referencing between FreeCAD and Blender.
+All dimensions are in millimetres. All colours are hex codes. Every object carries a UUID.
 
 ---
 
-## 1. Planting (Existing)
+## 1. Planting
 
-*Already implemented. Documented here for completeness and to establish the pattern that hardscape and levels objects follow.*
+*Establishes the pattern that hardscape and levels objects follow.*
 
 ### Plant
 
@@ -20,7 +18,6 @@ All dimensions are in millimetres. All colours are hex codes. Every object carri
 
 | Property | Type | Default | Notes |
 |---|---|---|---|
-| Label | String (auto) | — | FreeCAD auto-generated label |
 | Botanical Name | String | — | Full botanical name inc. cultivar, e.g. Actaea simplex 'Brunette' |
 | Common Name | String | — | Common/trade name |
 | Category | Enum | Perennial | Perennial \| Shrub \| Tree \| Grass \| Climber \| Bulb \| Fern \| Hedge \| Aquatic |
@@ -37,7 +34,7 @@ All dimensions are in millimetres. All colours are hex codes. Every object carri
 
 ## 2. Hardscape
 
-All hardscape objects share a common set of base properties, then add type-specific properties. In FreeCAD, these would be implemented as a base class (or mixin) with child classes for each object type.
+All hardscape objects share a common set of base properties, then add type-specific properties. In Grove the shared properties live in `HardscapeBase` (`crates/grove-core/src/garden/hardscape.rs`), embedded in each type-specific struct.
 
 ### 2.0 Common Hardscape Properties
 
@@ -45,7 +42,6 @@ All hardscape objects share a common set of base properties, then add type-speci
 
 | Property | Type | Default | Notes |
 |---|---|---|---|
-| Label | String (auto) | — | FreeCAD auto-generated label |
 | Object ID | UUID | Auto | Unique identifier for pipeline tracking |
 | Material | Enum | Stone | Stone \| Brick \| Timber \| Concrete \| Metal \| Composite \| Gravel \| Resin Bound \| Porcelain \| Render \| Corten \| Glass |
 | Material Detail | String | — | Specific product/finish, e.g. 'Yorkstone sawn', 'London stock brick' |
@@ -208,7 +204,7 @@ All hardscape objects share a common set of base properties, then add type-speci
 
 ## 3. Levels
 
-Levels objects define the vertical dimension of the site. They are driven by survey data (spot heights) and design decisions (finished levels). In FreeCAD, these sit on a dedicated Levels layer and can be used to generate a terrain mesh for Blender export.
+Levels objects define the vertical dimension of the site. They are driven by survey data (spot heights) and design decisions (finished levels). They sit on the dedicated `GD_LEVELS` layer.
 
 ### 3.1 Spot Height
 
@@ -263,94 +259,11 @@ Levels objects define the vertical dimension of the site. They are driven by sur
 
 ---
 
-## 4. Export Pipeline: FreeCAD to Blender
+## 4. Conventions and Layer Structure
 
-The export pipeline works in two parallel streams: geometry (as DXF or OBJ) and data (as JSON). A Blender import script reads both to reconstruct the scene.
+### 4.1 Layer Naming
 
-### 4.1 JSON Export Structure
-
-*Each object in FreeCAD exports a JSON record. The file groups objects by type.*
-
-Example structure:
-
-```json
-{
-  "metadata": {
-    "project": "Smith Garden",
-    "exported": "2026-03-06T14:00:00Z",
-    "datum": "Site TBM = 100.000m AOD",
-    "units": "mm"
-  },
-  "plants": [
-    {
-      "id": "49d85b6f-...",
-      "botanical_name": "Actaea simplex 'Brunette'",
-      "position": [x, y],
-      "height_mm": 1200,
-      "spread_mm": 400,
-      "colour": "#E53935"
-    }
-  ],
-  "hardscape": [
-    {
-      "id": "...",
-      "type": "Wall",
-      "geometry": "wall_001.dxf",
-      "height_mm": 450,
-      "width_mm": 215,
-      "material": "Brick",
-      "material_detail": "London stock",
-      "colour": "#8B7D6B"
-    }
-  ],
-  "levels": [
-    {
-      "id": "...",
-      "type": "SpotHeight",
-      "position": [x, y],
-      "elevation_mm": 100250
-    }
-  ]
-}
-```
-
-### 4.2 Blender Import Logic
-
-The Blender addon reads the JSON and processes each type as follows:
-
-**Plants:** Place a billboard or 3D asset at each position, scaled by height and spread. Assign material by colour code. Use geometry nodes to scatter within bed boundaries if density planting is specified.
-
-**Walls:** Import DXF polyline as curve, extrude to height and width. Apply material texture from a library keyed to the Material and Finish properties.
-
-**Paths:** Import centreline, extrude to width as a flat strip with slight thickness. Apply surface texture from Material property.
-
-**Patios:** Import closed shape, extrude as thin slab. Apply surface texture and optionally generate a board/paving pattern.
-
-**Steps:** Generate box geometry per riser from the step properties. Stack from Base Level upward.
-
-**Fences:** Import polyline, extrude to height. Apply panel type geometry from Fence Type (close board, trellis, etc.).
-
-**Pergolas:** Generate post and beam geometry from footprint and spacing properties.
-
-**Decking:** Import closed shape, generate board geometry at specified direction and spacing.
-
-**Water features:** Import shape, cut down to depth. Apply water material to surface.
-
-**Terrain:** Triangulate spot heights into a mesh (Delaunay). Drape all other objects onto this surface. Apply grass/ground texture.
-
-### 4.3 Material Library
-
-The Blender side needs a material library keyed to Material + Finish combinations. A sensible starting set would include:
-
-Stone (sawn, riven, tumbled), Brick (stock, engineering, handmade), Timber (softwood, hardwood, composite), Concrete (smooth, exposed aggregate, brushed), Metal (galvanised, powder coated, corten), Gravel (pea, angular, slate), Porcelain (matt, textured), Render (smooth, textured), Water, Grass, Soil, and Planting bed mulch.
-
----
-
-## 5. Conventions and Layer Structure
-
-### 5.1 FreeCAD Layer / Group Naming
-
-Objects should be organised into groups (which map to layers in the plan view and to collections in Blender):
+New objects are placed on these default layers:
 
 - **GD_PLANTING** — All plant objects
 - **GD_HARDSCAPE_WALLS** — Walls, raised beds
@@ -364,12 +277,13 @@ Objects should be organised into groups (which map to layers in the plan view an
 - **GD_BOUNDARY** — Site boundary (existing survey)
 - **GD_BUILDINGS** — Existing buildings (from survey)
 - **GD_SURVEY** — Original survey data, base image
+- **GD_ENTOURAGE** — People, furniture, vehicles and other scale references
 
-### 5.2 Coordinate System
+### 4.2 Coordinate System
 
-FreeCAD uses millimetres. The origin (0,0) should be set to a meaningful point — typically the corner of the house nearest the garden. Z = 0 should correspond to the site datum. All elevations in properties are relative to this datum.
+Grove uses millimetres (`f64` in entity data, `f32` in geometry and rendering). The origin (0,0) should be set to a meaningful point — typically the corner of the house nearest the garden. Z = 0 should correspond to the site datum. All elevations in properties are relative to this datum.
 
-### 5.3 Colour Conventions for Plan View
+### 4.3 Colour Conventions for Plan View
 
 Each object type should have a default plan colour that can be overridden per instance. Suggested defaults:
 
@@ -387,6 +301,6 @@ Each object type should have a default plan colour that can be overridden per in
 - **Contours:** #B71C1C (dark red)
 - **Drain runs:** #1B5E20 (dark green dashed)
 
-### 5.4 ID and Versioning
+### 4.4 ID and Versioning
 
-Every object gets a UUID (Object ID or Plant ID) generated on creation. This ID persists across exports and is the key for syncing between FreeCAD and Blender. If an object is duplicated, the copy gets a new UUID.
+Every object gets a UUID (Object ID or Plant ID) generated on creation. This ID persists across saves and exports, so external tools can match objects between exports. If an object is duplicated, the copy gets a new UUID.

@@ -2,6 +2,15 @@
 members = ["crates/grove-core", "crates/grove-app"]
 resolver = "2"
 
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.95"
+license = "MIT"
+repository = "https://github.com/madpirate78/grove"
+homepage = "https://github.com/madpirate78/grove"
+authors = ["madpirate78"]
+
 [workspace.dependencies]
 eframe = { version = "0.36", features = ["default", "persistence"] }
 egui = "0.36"
@@ -11,7 +20,6 @@ uuid = { version = "1", features = ["v4", "serde"] }
 csv = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-dxf = "0.5"
 svg2pdf = "0.13"
 usvg = "0.45"
 svg = "0.18"
